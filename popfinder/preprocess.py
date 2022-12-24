@@ -156,7 +156,7 @@ def split_kfcv(data, n_splits=5, n_reps=1, stratify_by_pop=True, seed=123):
     rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_reps, random_state=seed)
     dataset_list = []
 
-    for _, (train_ind, test_ind) in enumerate(rskf.split(data[:-1], data[-1], groups=data["pop"])):
+    for _, (train_ind, test_ind) in enumerate(rskf.split(data["alleles"], data["pop"], groups=data["pop"])):
         train = data.iloc[train_ind]
         test = data.iloc[test_ind]
         dataset_tuple = (train, test)
@@ -225,7 +225,7 @@ def _sort_samples(locs, samples):
 def _stratified_split(data, test_size, seed):
 
     X_train, X_test, y_train, y_test = train_test_split(
-        data[:-1], data[-1], stratify=data["pops"],
+        data["alleles"], data["pop"], stratify=data["pop"],
         random_state=seed, test_size=test_size)
 
     train = pd.concat([X_train, y_train], axis=1)
@@ -236,7 +236,7 @@ def _stratified_split(data, test_size, seed):
 def _random_split(data, test_size, seed):
 
     X_train, X_test, y_train, y_test = train_test_split(
-    data[:-1], data[-1],
+    data["alleles"], data["pop"],
     random_state=seed, test_size=test_size)
 
     train = pd.concat([X_train, y_train], axis=1)
