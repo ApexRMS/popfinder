@@ -44,10 +44,12 @@ def read_data(genetic_data, sample_data):
 
     # Load data and organize for output
     print("loading sample data")
-
     locs = pd.read_csv(sample_data, sep="\t")
     locs = _sort_samples(locs, samples)
     locs["alleles"] = list(dc)
+
+    # Normalize location data
+    locs = _normalize_locations(locs)
 
     return locs
 
@@ -243,3 +245,30 @@ def _random_split(data, test_size, seed):
     test = pd.concat([X_test, y_test], axis=1)
 
     return train, test
+
+def _normalize_locations(data):
+    """
+    Normalize location corrdinates.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        A pandas DataFrame corresponding to the results from `read_data()`.
+
+    Returns
+    -------
+    meanlong
+    sdlong
+    meanlat
+    sdlat
+    locs
+    """
+    meanlong = np.nanmean(data['x'])
+    sdlong = np.nanstd(data['x'])
+    meanlat = np.nanmean(data['y'])
+    sdlat = np.nanstd(data['y'])
+
+    data["x_norm"] = (data['x'].tolist() - meanlong) / sdlong
+    data["y_norm"] = (data['y'].tolist() - meanlat) / sdlat
+
+    return data

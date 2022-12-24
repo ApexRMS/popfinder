@@ -2,8 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
+from scipy import spatial
+import numpy as np
+import pandas as pd
 import os
 
+from preprocess import _normalize_locations
 from _neural_networks import ClassifierNet
 
 class PopClassifier(object):
@@ -17,6 +21,7 @@ class PopClassifier(object):
         self.output_folder = output_folder
         self.train_history = None
         self.best_model = None
+        self.accuracy = None
 
     def train(self, X_train, y_train, X_valid, y_valid, epochs=100):
         
@@ -69,15 +74,23 @@ class PopClassifier(object):
     def test(self, X_test, y_test):
         
         y_pred = self.best_mod(X_test)
-
         correct = (y_pred == y_test)
         accuracy = correct.sum() / correct.size
 
+        self.accuracy = accuracy
+
         return accuracy
 
-
-    def assign_unknown(self, unknown_data):
+    def assign_unknown(self, unknown_data, known_data):
         
-        y_assign = self.best_mod(unknown_data["alleles"]).argmax(axis=1)
+        preds = self.best_mod(unknown_data["alleles"]).argmax(axis=1)
+        
+        return preds # assign to pops first
 
-        return y_assign
+    def get_assignment_summary(self):
+
+        summary = {
+            "accuracy": self.accuracy,
+        }
+
+        return summary
