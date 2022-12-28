@@ -8,6 +8,7 @@ import os
 from popfinder._neural_networks import RegressorNet
 from popfinder.preprocess import split_train_test
 from popfinder.preprocess import split_kfcv
+from popfinder.preprocess import _normalize_locations
 from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
 from popfinder._helper import _data_converter
@@ -91,22 +92,23 @@ class PopRegressor(object):
         
         X_test = test_input["alleles"]
         y_test = test_input[["x", "y"]]
+        y_test_norm = _normalize_locations(y_test)
+        y_test_norm = y_test_norm[["x_norm", "y_norm"]]
 
-        X_test, y_test = _data_converter(X_test, y_test)
+        X_test, y_test_norm = _data_converter(X_test, y_test_norm)
 
-        y_pred = self.best_model(X_test)
-        normalized_preds = self._normalize_preds(y_pred)
+        y_pred = self.best_model(X_test).detach().numpy()
 
         dists = [
             spatial.distance.euclidean(
-                normalized_preds[x, :], y_test[x, :]
-            ) for x in range(len(normalized_preds))
+                y_pred[x, :], y_test_norm[x, :]
+            ) for x in range(len(y_pred))
         ]
 
-        self.median_distance = np.median(dists)
+        self.median_distance = np.median(dists) # won't be accurate, need to unnormalize
         self.mean_distance = np.mean(dists)
-        self.r2_long = np.corrcoef(normalized_preds[:, 0], y_test[:, 0])[0][1] ** 2
-        self.r2_lat = np.corrcoef(normalized_preds[:, 1], y_test[:, 1])[0][1] ** 2
+        self.r2_long = np.corrcoef(y_pred[:, 0], y_test_norm[:, 0])[0][1] ** 2
+        self.r2_lat = np.corrcoef(y_pred[:, 1], y_test_norm[:, 1])[0][1] ** 2
 
         summary = self.get_assignment_summary()
 
@@ -122,10 +124,10 @@ class PopRegressor(object):
     def get_assignment_summary(self):
 
         summary = {
-            "median_distance": self.median_distance,
-            "mean_distance": self.mean_distance,
-            "r2_long": self.r2_long,
-            "r2_lat": self.r2_lat
+            "median_distance": [self.median_distance],
+            "mean_distance": [self.mean_distance],
+            "r2_long": [self.r2_long],
+            "r2_lat": [self.r2_lat]
         }
 
         return summary
