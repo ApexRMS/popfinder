@@ -78,7 +78,7 @@ def split_unknowns(data):
 
     return known, unknown
 
-def split_train_test(data, stratify_by_pop=True, test_size=0.2, valid_size=None, seed=123):
+def split_train_test(data, stratify_by_pop=True, test_size=0.2, seed=123):
     """
     Splits data into training and testing sets.
     
@@ -92,8 +92,6 @@ def split_train_test(data, stratify_by_pop=True, test_size=0.2, valid_size=None,
         Whether to stratify the data by population. Default is True.
     test_size : float
         Proportion of data to be used for testing. Default is 0.2.
-    valid_size : float
-        Proportion of data to be used for validation. Default is None.
     seed : int
         Random seed for reproducibility. Default is 123.
         
@@ -105,28 +103,12 @@ def split_train_test(data, stratify_by_pop=True, test_size=0.2, valid_size=None,
     test : Pandas DataFrame
         Contains information on corresponding sampleID and
         genetic information for testing samples.
-    valid : Pandas DataFrame
-        Contains information on corresponding sampleID and
-        genetic information for validation samples. This is only
-        returned if `valid_size` is not None.
     """
     # Split data into training and testing
     if stratify_by_pop is True:
         train, test = _stratified_split(data, test_size, seed)
     else:
         train, test = _random_split(data, test_size)
-
-    if valid_size is not None:
-        # Figure out valid_size based on train set
-        prop = len(data) * valid_size
-        new_valid_size = prop / len(train)
-
-        if stratify_by_pop is True:
-            train, valid = _stratified_split(data, new_valid_size, seed)
-        else:
-            train, valid = _random_split(data, new_valid_size, seed)
-
-        return train, test, valid
 
     return train, test
 
