@@ -6,9 +6,6 @@ import pandas as pd
 import os
 
 from popfinder._neural_networks import RegressorNet
-from popfinder.preprocess import split_train_test
-from popfinder.preprocess import split_kfcv
-from popfinder.preprocess import _normalize_locations
 from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
 from popfinder._helper import _data_converter
@@ -18,7 +15,9 @@ class PopRegressor(object):
     """
     A class to represent a regressor neural network object for population assignment.
     """
-    def __init__(self, random_state=123, output_folder=None):
+    def __init__(self, data, random_state=123, output_folder=None):
+
+        self.data = data # GeneticData object
         self.random_state = random_state
         if output_folder is None:
             output_folder = os.getcwd()
@@ -31,8 +30,9 @@ class PopRegressor(object):
         self.r2_long = None
 
 
-    def train(self, train_input, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
+    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
         
+        train_input = self.data.train
         inputs = _generate_train_inputs(train_input, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
         loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
@@ -88,20 +88,20 @@ class PopRegressor(object):
         self.train_history = pd.DataFrame(loss_dict)
         self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, test_input):
+    def test(self):
         
+        test_input = self.data.test
+
         X_test = test_input["alleles"]
         y_test = test_input[["x", "y"]]
-        y_test_norm = _normalize_locations(y_test)
-        y_test_norm = y_test_norm[["x_norm", "y_norm"]]
-
-        X_test, y_test_norm = _data_converter(X_test, y_test_norm)
+        X_test, y_test = _data_converter(X_test, y_test)
 
         y_pred = self.best_model(X_test).detach().numpy()
+        y_pred = self._unnormalize_locations(y_pred)
 
         dists = [
             spatial.distance.euclidean(
-                y_pred[x, :], y_test_norm[x, :]
+                y_pred[x, :], y_test[x, :]
             ) for x in range(len(y_pred))
         ]
 
@@ -114,12 +114,13 @@ class PopRegressor(object):
 
         return pd.DataFrame(summary)
 
-    def assign_unknown(self, unknown_data):
+    def assign_unknown(self):
         
-        pred = self.best_model(unknown_data["alleles"]).argmax(axis=1)
-        normalized_preds = self._normalize_preds(pred)
+        unknown_data = self.data.unknown
+        y_pred = self.best_model(unknown_data["alleles"]).detach().numpy()
+        y_pred = self._unnormalize_locations(y_pred)
 
-        return normalized_preds
+        return y_pred
 
     def get_assignment_summary(self):
 
@@ -141,4 +142,13 @@ class PopRegressor(object):
         loss = Variable(torch.tensor(loss), requires_grad=True)
 
         return loss
+
+    def _unnormalize_locations(self, y_pred):
+
+        y_pred_norm = np.array(
+            [[x[0] * self.data.sdlong + self.data.meanlong,
+              x[1] * self.data.sdlat + self.data.meanlat
+            ] for x in y_pred])
+
+        return y_pred_norm
         

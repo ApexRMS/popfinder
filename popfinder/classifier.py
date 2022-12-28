@@ -6,8 +6,6 @@ import pandas as pd
 import os
 
 from popfinder._neural_networks import ClassifierNet
-from popfinder.preprocess import split_train_test
-from popfinder.preprocess import split_kfcv
 from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
 from popfinder._helper import _data_converter
@@ -19,7 +17,9 @@ class PopClassifier(object):
     """
     A class to represent a classifier neural network object for population assignment.
     """
-    def __init__(self, random_state=123, output_folder=None):
+    def __init__(self, data, random_state=123, output_folder=None):
+
+        self.data = data # GeneticData object
         self.random_state = random_state
         if output_folder is None:
             output_folder = os.getcwd()
@@ -29,8 +29,9 @@ class PopClassifier(object):
         self.best_model = None
         self.accuracy = None
 
-    def train(self, train_input, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
+    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
 
+        train_input = self.data.train
         inputs = _generate_train_inputs(train_input, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
         loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
@@ -86,8 +87,10 @@ class PopClassifier(object):
         self.train_history = pd.DataFrame(loss_dict)
         self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, test_input):
+    def test(self):
         
+        test_input = self.data.test
+
         X_test = test_input["alleles"]
         y_test = test_input["pop"]
 
@@ -102,8 +105,10 @@ class PopClassifier(object):
 
         return self.accuracy
 
-    def assign_unknown(self, unknown_data):
+    def assign_unknown(self):
         
+        unknown_data = self.data.unknown
+
         X_unknown = unknown_data["alleles"]
         X_unknown = _data_converter(X_unknown, None)
 
