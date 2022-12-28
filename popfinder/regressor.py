@@ -106,8 +106,8 @@ class PopRegressor(object):
 
         self.median_distance = np.median(dists) # won't be accurate, need to unnormalize
         self.mean_distance = np.mean(dists)
-        self.r2_long = np.corrcoef(y_pred[:, 0], y_test_norm[:, 0])[0][1] ** 2
-        self.r2_lat = np.corrcoef(y_pred[:, 1], y_test_norm[:, 1])[0][1] ** 2
+        self.r2_long = np.corrcoef(y_pred[:, 0], y_test[:, 0])[0][1] ** 2
+        self.r2_lat = np.corrcoef(y_pred[:, 1], y_test[:, 1])[0][1] ** 2
 
         summary = self.get_assignment_summary()
 
@@ -116,10 +116,16 @@ class PopRegressor(object):
     def assign_unknown(self):
         
         unknown_data = self.data.unknowns
-        y_pred = self.best_model(unknown_data["alleles"]).detach().numpy()
-        y_pred = self._unnormalize_locations(y_pred)
 
-        return y_pred
+        X_unknown = unknown_data["alleles"]
+        X_unknown = _data_converter(X_unknown, None)
+
+        y_pred = self.best_model(X_unknown).detach().numpy()
+        y_pred = self._unnormalize_locations(y_pred)
+        unknown_data.loc[:, "x"] = y_pred[:, 0]
+        unknown_data.loc[:, "y"] = y_pred[:, 1]
+
+        return unknown_data
 
     def get_assignment_summary(self):
 
