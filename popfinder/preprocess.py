@@ -158,13 +158,20 @@ def split_kfcv(data, n_splits=5, n_reps=1, stratify_by_pop=True, seed=123):
     rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_reps, random_state=seed)
     dataset_list = []
 
-    for _, (train_ind, test_ind) in enumerate(rskf.split(data["alleles"], data["pop"], groups=data["pop"])):
-        train = data.iloc[train_ind]
-        test = data.iloc[test_ind]
-        dataset_tuple = (train, test)
-        dataset_list.append(dataset_tuple)
+    if stratify_by_pop:
+        for _, (train_ind, test_ind) in enumerate(rskf.split(data["alleles"], data["pop"], groups=data["pop"])):
+            train = data.iloc[train_ind]
+            test = data.iloc[test_ind]
+            dataset_tuple = (train, test)
+            dataset_list.append(dataset_tuple)
+    else:
+        for _, (train_ind, test_ind) in enumerate(rskf.split(data["alleles"], data["pop"])):
+            train = data.iloc[train_ind]
+            test = data.iloc[test_ind]
+            dataset_tuple = (train, test)
+            dataset_list.append(dataset_tuple)
 
-    return dataset_tuple
+    return dataset_list
 
 def _load_genotypes(genetic_data):
 

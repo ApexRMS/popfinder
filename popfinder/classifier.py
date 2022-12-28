@@ -84,6 +84,7 @@ class PopClassifier(object):
     def assign_unknown(self, unknown_data, known_data):
         
         preds = self.best_mod(unknown_data["alleles"]).argmax(axis=1)
+        pops = known_data["pop"].unique()
         
         return preds # assign to pops first
 
