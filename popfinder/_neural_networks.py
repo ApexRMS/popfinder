@@ -31,7 +31,7 @@ class RegressorNet(nn.Module):
         self.batch1 = nn.BatchNorm1d(hidden_size)
         self.fc2 = nn.Linear(hidden_size, batch_size)
         self.batch2 = nn.BatchNorm1d(batch_size)
-        self.fc3 = nn.Linear(batch_size, 1)
+        self.fc3 = nn.Linear(batch_size, 2)
 
     def forward(self, x):
         x = self.batch1(F.relu(self.fc1(x)))

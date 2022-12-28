@@ -216,7 +216,7 @@ def _sort_samples(locs, samples):
 def _stratified_split(data, test_size, seed):
 
     X_train, X_test, y_train, y_test = train_test_split(
-        data["alleles"], data["pop"], stratify=data["pop"],
+        data["alleles"], data[["x", "y", "pop"]], stratify=data["pop"],
         random_state=seed, test_size=test_size)
 
     train = pd.concat([X_train, y_train], axis=1)
@@ -227,7 +227,7 @@ def _stratified_split(data, test_size, seed):
 def _random_split(data, test_size, seed):
 
     X_train, X_test, y_train, y_test = train_test_split(
-    data["alleles"], data["pop"],
+    data["alleles"], data[["x", "y", "pop"]],
     random_state=seed, test_size=test_size)
 
     train = pd.concat([X_train, y_train], axis=1)

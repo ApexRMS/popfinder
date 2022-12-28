@@ -1,19 +1,23 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
+from torch.autograd import Variable
 from scipy import spatial
 import numpy as np
+import pandas as pd
 import os
 
-from preprocess import _normalize_locations
-from _neural_networks import RegressorNet
+from popfinder._neural_networks import RegressorNet
+from popfinder.preprocess import split_train_test
+from popfinder.preprocess import split_kfcv
+from popfinder._helper import _generate_train_inputs
+from popfinder._helper import _generate_data_loaders
+from popfinder._helper import _data_converter
+from popfinder._helper import _split_input_regressor
 
 class PopRegressor(object):
     """
     A class to represent a regressor neural network object for population assignment.
     """
-    def __init__(self, random_state, output_folder=None):
+    def __init__(self, random_state=123, output_folder=None):
         self.random_state = random_state
         if output_folder is None:
             output_folder = os.getcwd()
@@ -26,80 +30,94 @@ class PopRegressor(object):
         self.r2_long = None
 
 
-    def train(self, X_train, y_train, X_valid, y_valid, epochs=100):
+    def train(self, train_input, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
         
-        train = TensorDataset(X_train, y_train)
-        train_loader = DataLoader(train, batch_size=16, shuffle=True)
-        valid = TensorDataset(X_valid, y_valid)
-        valid_loader = DataLoader(valid, batch_size=16, shuffle=True)
+        inputs = _generate_train_inputs(train_input, valid_size, cv_splits,
+                                        cv_reps, seed=self.random_state)
+        loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
+        lowest_val_loss = 9999
 
-        net = RegressorNet(X_train.shape[1], 16, len(y_train.unique()))
-        optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
-        loss_func = self._euclidean_dist_loss()
-        loss_dict = {"epoch": [], "train": [], "valid": []}
-        lowest_val_loss = 1
+        for i, input in enumerate(inputs):
 
-        for epoch in range(epochs):
+            X_train, y_train, X_valid, y_valid = _split_input_regressor(input)
+            train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
+                                                                X_valid, y_valid)
 
-            train_loss = 0
-            valid_loss = 0
+            net = RegressorNet(X_train.shape[1], 16, len(y_train.unique()))
+            optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
+            loss_func = self._euclidean_dist_loss
 
-            for _, (data, target) in enumerate(train_loader):
-                optimizer.zero_grad()
-                output = net(data)
-                loss = loss_func(output, target)
-                loss.backward()
-                optimizer.step()
-                train_loss += loss.item
-        
-            # Calculate average train loss
-            avg_train_loss = train_loss / len(train_loader)
+            for epoch in range(epochs):
 
-            for _, (data, target) in enumerate(valid_loader):
-                output = net(data)
-                loss = loss_func(output, target)
-                valid_loss += loss.item
+                train_loss = 0
+                valid_loss = 0
 
-                if valid_loss < lowest_val_loss:
-                    lowest_val_loss = valid_loss
-                    torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
+                for _, (data, target) in enumerate(train_loader):
+                    optimizer.zero_grad()
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().long())
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.data.item()
+            
+                # Calculate average train loss
+                avg_train_loss = train_loss / len(train_loader)
 
-            # Calculate average validation loss
-            avg_valid_loss = valid_loss / len(valid_loader)
+                for _, (data, target) in enumerate(valid_loader):
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().long())
+                    valid_loss += loss.data.item()
 
-            loss_dict["epoch"].append(epoch)
-            loss_dict["train"].append(avg_train_loss)
-            loss_dict["valid"].append(avg_valid_loss)
+                    if valid_loss < lowest_val_loss:
+                        lowest_val_loss = valid_loss
+                        torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
 
-        self.train_history = loss_dict
+                # Calculate average validation loss
+                avg_valid_loss = valid_loss / len(valid_loader)
+
+                split = i % cv_splits + 1
+                rep = int(i / cv_splits) + 1
+
+                loss_dict["rep"].append(rep)
+                loss_dict["split"].append(split)
+                loss_dict["epoch"].append(epoch)
+                loss_dict["train"].append(avg_train_loss)
+                loss_dict["valid"].append(avg_valid_loss)
+
+        self.train_history = pd.DataFrame(loss_dict)
         self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, X_test, y_test):
+    def test(self, test_input):
         
-        y_pred = self.best_mod(X_test)
+        X_test = test_input["alleles"]
+        y_test = test_input[["x", "y"]]
+
+        X_test, y_test = _data_converter(X_test, y_test)
+
+        y_pred = self.best_model(X_test)
         normalized_preds = self._normalize_preds(y_pred)
-
-        r2_long = np.corrcoef(normalized_preds[:, 0], y_test[:, 0])[0][1] ** 2
-        r2_lat = np.corrcoef(normalized_preds[:, 1], y_test[:, 1])[0][1] ** 2
-
-        return {"r2_long": r2_long, "r2_lat": r2_lat}
-
-
-    def assign_unknown(self, unknown_data):
-        
-        pred = self.best_mod(unknown_data["alleles"]).argmax(axis=1)
-        normalized_preds = self._normalize_preds(pred)
 
         dists = [
             spatial.distance.euclidean(
-                normalized_preds[x, :], actual_locs[x, :]
+                normalized_preds[x, :], y_test[x, :]
             ) for x in range(len(normalized_preds))
         ]
 
         self.median_distance = np.median(dists)
         self.mean_distance = np.mean(dists)
+        self.r2_long = np.corrcoef(normalized_preds[:, 0], y_test[:, 0])[0][1] ** 2
+        self.r2_lat = np.corrcoef(normalized_preds[:, 1], y_test[:, 1])[0][1] ** 2
 
-        return dists
+        summary = self.get_assignment_summary()
+
+        return pd.DataFrame(summary)
+
+    def assign_unknown(self, unknown_data):
+        
+        pred = self.best_model(unknown_data["alleles"]).argmax(axis=1)
+        normalized_preds = self._normalize_preds(pred)
+
+        return normalized_preds
 
     def get_assignment_summary(self):
 
@@ -114,5 +132,11 @@ class PopRegressor(object):
 
     def _euclidean_dist_loss(self, y_pred, y_true):
 
-        return np.sqrt(np.sum(np.square(y_pred - y_true), axis=-1))
+        y_pred = y_pred.detach().numpy()
+        y_true = y_true.detach().numpy()
+
+        loss = np.sqrt(np.sum(np.square(y_pred - y_true)))
+        loss = Variable(torch.tensor(loss), requires_grad=True)
+
+        return loss
         
