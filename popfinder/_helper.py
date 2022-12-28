@@ -4,16 +4,14 @@ from torch.autograd import Variable
 from sklearn import preprocessing
 import numpy as np
 
-from popfinder.preprocess import split_train_test, split_kfcv
-
-def _generate_train_inputs(train_input, valid_size, cv_splits, cv_reps, seed=123):
+def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123):
 
     if cv_splits == 1:
-        train_input, valid_input = split_train_test(train_input, test_size=valid_size, seed=seed)
+        train_input, valid_input = data_obj.split_train_test(test_size=valid_size, seed=seed)
         inputs = [(train_input, valid_input)]
 
     elif cv_splits > 1:
-        inputs = split_kfcv(train_input, n_splits=cv_splits, n_reps=cv_reps, seed=seed)
+        inputs = data_obj.split_kfcv(n_splits=cv_splits, n_reps=cv_reps, seed=seed)
 
     return inputs
 

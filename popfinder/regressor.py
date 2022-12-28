@@ -32,8 +32,7 @@ class PopRegressor(object):
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
         
-        train_input = self.data.train
-        inputs = _generate_train_inputs(train_input, valid_size, cv_splits,
+        inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
         loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
         lowest_val_loss = 9999
@@ -116,7 +115,7 @@ class PopRegressor(object):
 
     def assign_unknown(self):
         
-        unknown_data = self.data.unknown
+        unknown_data = self.data.unknowns
         y_pred = self.best_model(unknown_data["alleles"]).detach().numpy()
         y_pred = self._unnormalize_locations(y_pred)
 
