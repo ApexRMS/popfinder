@@ -142,8 +142,8 @@ class PopRegressor(object):
 
         self.classification_test_results = self._test_classification(test_locs,
             num_contours, save_plots)
-        self.contour_classification = self._classify_unknowns(test_locs,
-            pred_locs, num_contours, save_plots)
+        self.contour_classification = self._classify_unknowns(pred_locs,
+            test_locs, num_contours, save_plots)
 
         if save_data:
             self.classification_test_results.to_csv(os.path.join(self.output_folder,
@@ -154,7 +154,8 @@ class PopRegressor(object):
         # Generate classification summary stats from test_report
         y_pred = self.classification_test_results["pred_pop"]
         y_true = self.classification_test_results["true_pop"]
-        self.classification_confusion_matrix = confusion_matrix(y_true, y_pred, normalize=True)
+        self.classification_confusion_matrix = np.round(
+            confusion_matrix(y_true, y_pred, normalize="true"), 3)
         self.classification_accuracy = accuracy_score(y_true, y_pred)
         self.classification_precision = precision_score(y_true, y_pred, average="weighted")
         self.classification_recall = recall_score(y_true, y_pred, average="weighted")
@@ -199,7 +200,7 @@ class PopRegressor(object):
         ax1.legend()
 
         if save:
-            fig.savefig(self.output_folder + "/training_history.pdf",
+            fig.savefig(self.output_folder + "/training_history.png",
                 bbox_inches="tight")
 
         plt.close()
@@ -245,9 +246,12 @@ class PopRegressor(object):
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 
+        if self.contour_classification is None:
+            raise ValueError("No classification results to plot.")
         # Put code in shared function for both classifier and regressor?
         e_preds = self.contour_classification.copy()
         e_preds.set_index("sampleID", inplace=True)
+        e_preds = pd.get_dummies(e_preds["classification"])
         num_classes = len(e_preds.columns) # will need to double check
 
         sn.set()
@@ -428,7 +432,7 @@ class PopRegressor(object):
             # Find predicted pop
             pred_pop, kd = self._contour_finder(test_locs, cset)
             test_report["sampleID"].append(sample)
-            test_report["true_pop"].append(sample_df["pop"].unique[0]) #test
+            test_report["true_pop"].append(np.unique(sample_df["pop"])[0])
             test_report["pred_pop"].append(pred_pop)
             test_report["kd_estimate"].append(kd)
 

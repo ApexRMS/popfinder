@@ -111,7 +111,8 @@ class PopClassifier(object):
 
         self.test_results = pd.DataFrame({"y_test": y_true,
                                           "y_pred": y_pred})
-        self.confusion_matrix = confusion_matrix(y_true, y_pred, normalize="true")
+        self.confusion_matrix = np.round(
+            confusion_matrix(y_true, y_pred, normalize="true"), 3)
         self.accuracy = np.round(accuracy_score(y_true, y_pred), 3)
         self.precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
         self.recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
