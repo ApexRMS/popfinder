@@ -165,9 +165,9 @@ class PopRegressor(object):
             pred_locs = self.assign_unknown(boot_data=boot_data)
 
             test_locs_final = pd.concat([test_locs_final,
-                test_locs[["sampleID", "x", "y", "x_pred", "y_pred"]]])
+                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
             pred_locs_final = pd.concat([pred_locs_final,
-                pred_locs[["sampleID", "x", "y", "x_pred", "y_pred"]]])
+                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
 
         self.test_locs_final = test_locs_final # option to save
         self.pred_locs_final = pred_locs_final # option to save
@@ -183,7 +183,7 @@ class PopRegressor(object):
         for sample in pred_locs["sampleID"].unique():
 
             sample_df = pred_locs[pred_locs["sampleID"] == sample]
-            classification_data = classification_data["sampleID"].append(sample)
+            classification_data["sampleID"].append(sample)
             d_x = (max(sample_df["x_pred"]) - min(sample_df["x_pred"])) / 5
             d_y = (max(sample_df["y_pred"]) - min(sample_df["y_pred"])) / 5
             xlim = min(sample_df["x_pred"]) - d_x, max(sample_df["x_pred"]) + d_x
@@ -211,7 +211,7 @@ class PopRegressor(object):
 
             cset.levels = -np.sort(-cset.levels)
 
-            for pop in test_locs["pop"].values:
+            for pop in np.unique(test_locs["pop"].values):
                 x = test_locs[test_locs["pop"] == pop]["x"].values[0]
                 y = test_locs[test_locs["pop"] == pop]["y"].values[0]
                 plt.scatter(x, y, cmap="inferno", label=pop)
