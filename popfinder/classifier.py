@@ -16,6 +16,7 @@ from popfinder._helper import _split_input_classifier
 from popfinder._visualize import _plot_assignment
 from popfinder._visualize import _plot_training_curve
 from popfinder._visualize import _plot_confusion_matrix
+from popfinder._visualize import _plot_structure
 
 pd.options.mode.chained_assignment = None
 
@@ -113,10 +114,17 @@ class PopClassifier(object):
         y_pred = self.best_model(X_test).argmax(axis=1)
         y_true = y_test.squeeze()
 
-        self.test_results = pd.DataFrame({"y_test": y_true,
-                                          "y_pred": y_pred})
+        # revert from label encoder
+        y_pred_pops = self.label_enc.inverse_transform(y_pred)
+        y_true_pops = self.label_enc.inverse_transform(y_true)
+
+        self.test_results = pd.DataFrame({"true_pop": y_true_pops,
+                                          "pred_pop": y_pred_pops})
         self.confusion_matrix = np.round(
-            confusion_matrix(y_true, y_pred, normalize="true"), 3)
+            confusion_matrix(self.test_results["true_pop"],
+                             self.test_results["pred_pop"], 
+                             labels=np.unique(y_true_pops).tolist(),
+                             normalize="true"), 3)
         self.accuracy = np.round(accuracy_score(y_true, y_pred), 3)
         self.precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
         self.recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
@@ -175,43 +183,15 @@ class PopClassifier(object):
         _plot_assignment(e_preds, col_scheme, self.output_folder,
             self._nn_type, save)
 
-    def plot_structure(self, preds, save=True, col_scheme="Spectral"):
+    def plot_structure(self, save=True, col_scheme="Spectral"):
         """
         Plots the proportion of times individuals from the
         test data were assigned to the correct population. 
         Used for determining the accuracy of the classifier.
         """
-        preds = preds.drop(preds.columns[0], axis=1) # replace preds
-        npreds = preds.groupby(["true_pops"]).agg("mean")
-        npreds = npreds.sort_values("true_pops", ascending=True)
-        npreds = npreds / np.sum(npreds, axis=1)
+        preds = pd.DataFrame(self.confusion_matrix,
+                             columns=self.label_enc.classes_,
+                             index=self.label_enc.classes_)
 
-        # Make sure values are correct
-        if not np.round(np.sum(npreds, axis=1), 2).eq(1).all():
-            raise ValueError("Incorrect input values")
-
-        # Find number of unique classes
-        num_classes = len(npreds.index)
-
-        if not len(npreds.index) == len(npreds.columns):
-            raise ValueError(
-                "Number of pops does not \
-                match number of predicted pops"
-            )
-
-        sn.set()
-        sn.set_style("ticks")
-        npreds.plot(kind="bar", stacked=True,
-            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
-            figsize=(12, 6), grid=None)
-        legend = plt.legend(loc="center right", bbox_to_anchor=(1.2, 0.5),
-            prop={"size": 15}, title="Predicted Pop")
-        plt.setp(legend.get_title(), fontsize="x-large")
-        plt.xlabel("Actual Pop", fontsize=20)
-        plt.ylabel("Frequency of Assignment", fontsize=20)
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-
-        if save:
-            plt.savefig(self.output_folder + "/structure_plot.png",
-                bbox_inches="tight")
+        _plot_structure(preds, col_scheme, self._nn_type, 
+            self.output_folder, save)

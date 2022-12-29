@@ -28,7 +28,7 @@ def _plot_training_curve(train_history, nn_type, output_folder, save):
 def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
     output_folder, save):
 
-    true_labels = test_results["y_test"]
+    true_labels = test_results["true_pop"] # test w/ classifier
 
     cm = np.round(confusion_matrix, 2)
     plt.style.use("default")
@@ -88,3 +88,25 @@ def _plot_assignment(e_preds, col_scheme, output_folder,
             bbox_inches="tight")
 
     plt.close()
+
+def _plot_structure(preds, col_scheme, nn_type, output_folder, save):
+
+    num_classes = len(preds.index)
+
+    sn.set()
+    sn.set_style("ticks")
+    preds.plot(kind="bar", stacked=True,
+        colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+        figsize=(12, 6), grid=None)
+    legend = plt.legend(loc="center right", bbox_to_anchor=(1.2, 0.5),
+        prop={"size": 15}, title="Predicted Pop")
+    plt.setp(legend.get_title(), fontsize="x-large")
+    plt.xlabel("Actual Pop", fontsize=20)
+    plt.ylabel("Frequency of Assignment", fontsize=20)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+
+    if save:
+        plt.savefig(os.path.join(output_folder,
+            nn_type + "_structure_plot.png"),
+            bbox_inches="tight")

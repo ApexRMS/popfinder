@@ -20,6 +20,7 @@ from popfinder._helper import _split_input_regressor
 from popfinder._visualize import _plot_assignment
 from popfinder._visualize import _plot_training_curve
 from popfinder._visualize import _plot_confusion_matrix
+from popfinder._visualize import _plot_structure
 
 class PopRegressor(object):
     """
@@ -87,7 +88,7 @@ class PopRegressor(object):
         self.train_history = loss_df_final
         self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, boot_data=None):
+    def test(self, boot_data=None, verbose=False):
         
         if boot_data is None:
             test_input = self.data.test
@@ -115,7 +116,9 @@ class PopRegressor(object):
         self.r2_lat = np.corrcoef(y_pred[:, 1], y_test[:, 1])[0][1] ** 2
 
         self.summary = self.get_assignment_summary()
-        print(self.summary)
+
+        if verbose:
+            print(self.summary)
 
         return test_input
 
@@ -207,7 +210,8 @@ class PopRegressor(object):
         labels generated from the test data to give a visual representation
         of the accuracy of the model.
         """
-        _plot_confusion_matrix(self.test_results, self.confusion_matrix,
+        _plot_confusion_matrix(self.classification_test_results,
+            self.classification_confusion_matrix,
             self._nn_type, self.output_folder, save)
 
     def plot_roc_curve():
@@ -223,46 +227,19 @@ class PopRegressor(object):
         _plot_assignment(e_preds, col_scheme, self.output_folder,
             self._nn_type, save)
 
-    def plot_structure(self, preds, save=True, col_scheme="Spectral"):
+    def plot_structure(self, save=True, col_scheme="Spectral"):
         """
         Plots the proportion of times individuals from the
         test data were assigned to the correct population. 
         Used for determining the accuracy of the classifier.
         """
-        preds = preds.drop(preds.columns[0], axis=1) # replace preds
-        npreds = preds.groupby(["true_pops"]).agg("mean")
-        npreds = npreds.sort_values("true_pops", ascending=True)
-        npreds = npreds / np.sum(npreds, axis=1)
+        classes = np.unique(self.classification_test_results["true_pop"])
+        preds = pd.DataFrame(self.classification_confusion_matrix,
+                             columns=classes,
+                             index=classes)
 
-        # Make sure values are correct
-        if not np.round(np.sum(npreds, axis=1), 2).eq(1).all():
-            raise ValueError("Incorrect input values")
-
-        # Find number of unique classes
-        num_classes = len(npreds.index)
-
-        if not len(npreds.index) == len(npreds.columns):
-            raise ValueError(
-                "Number of pops does not \
-                match number of predicted pops"
-            )
-
-        sn.set()
-        sn.set_style("ticks")
-        npreds.plot(kind="bar", stacked=True,
-            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
-            figsize=(12, 6), grid=None)
-        legend = plt.legend(loc="center right", bbox_to_anchor=(1.2, 0.5),
-            prop={"size": 15}, title="Predicted Pop")
-        plt.setp(legend.get_title(), fontsize="x-large")
-        plt.xlabel("Actual Pop", fontsize=20)
-        plt.ylabel("Frequency of Assignment", fontsize=20)
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-
-        if save:
-            plt.savefig(self.output_folder + "/structure_plot.png",
-                bbox_inches="tight")
+        _plot_structure(preds, col_scheme, self._nn_type, 
+            self.output_folder, save)
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
