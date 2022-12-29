@@ -1,6 +1,9 @@
 import torch
 from torch.autograd import Variable
 from scipy import spatial
+from scipy import stats
+import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import pandas as pd
 import os
@@ -75,7 +78,7 @@ class PopRegressor(object):
         if boot_data is None:
             test_input = self.data.test
         else:
-            test_input = boot_data
+            test_input = boot_data.test
 
         X_test = test_input["alleles"]    
         y_test = test_input[["x", "y"]]
@@ -107,7 +110,7 @@ class PopRegressor(object):
         if boot_data is None:
             unknown_data = self.data.unknowns
         else:
-            unknown_data = boot_data
+            unknown_data = boot_data.unknowns
 
         X_unknown = unknown_data["alleles"]
         X_unknown = _data_converter(X_unknown, None)
@@ -130,10 +133,12 @@ class PopRegressor(object):
 
         return summary
 
-    def generate_contours(self, nboots=50):
+    def generate_bootstraps(self, nboots=50):
 
-        test_locs_final = pd.DataFrame({"x": [], "y": [], "x_pred": [], "y_pred": []})
-        pred_locs_final = pd.DataFrame({"x_pred": [], "y_pred": []})
+        test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
+                                        "y": [], "x_pred": [], "y_pred": []})
+        pred_locs_final = pd.DataFrame({"sampleID": [], "pop": [], 
+                                        "x_pred": [], "y_pred": []})    
 
         # Use bootstrap to randomly select sites from training/test/unknown data
         num_sites = self.data.train["alleles"].values[0].shape[0]
@@ -145,6 +150,7 @@ class PopRegressor(object):
             boot_data = GeneticData()
             boot_data.train = self.data.train.copy()
             boot_data.test = self.data.test.copy()
+            boot_data.knowns = pd.concat([self.data.train, self.data.test])
             boot_data.unknowns = self.data.unknowns.copy()
 
             # Slice datasets by site_indices
@@ -155,14 +161,130 @@ class PopRegressor(object):
             # Train on new training set
             self.train(boot_data=boot_data)
             test_locs = self.test(boot_data=boot_data)
+            test_locs["sampleID"] = test_locs.index
             pred_locs = self.assign_unknown(boot_data=boot_data)
 
             test_locs_final = pd.concat([test_locs_final,
-                test_locs[["x", "y", "x_pred", "y_pred"]]])
-            pred_locs_final = pd.concat([pred_locs_final, pred_locs])
+                test_locs[["sampleID", "x", "y", "x_pred", "y_pred"]]])
+            pred_locs_final = pd.concat([pred_locs_final,
+                pred_locs[["sampleID", "x", "y", "x_pred", "y_pred"]]])
 
         self.test_locs_final = test_locs_final # option to save
         self.pred_locs_final = pred_locs_final # option to save
+
+    def generate_contours(self, num_contours=5, save_plots=True, 
+                          save_data=True):
+
+        test_locs = self.test_locs_final
+        pred_locs = self.pred_locs_final
+
+        classification_data = {"sampleID": [], "classification": [], "kd_estimate": []}
+
+        for sample in pred_locs["sampleID"].unique():
+
+            sample_df = pred_locs[pred_locs["sampleID"] == sample]
+            classification_data = classification_data["sampleID"].append(sample)
+            d_x = (max(sample_df["x_pred"]) - min(sample_df["x_pred"])) / 5
+            d_y = (max(sample_df["y_pred"]) - min(sample_df["y_pred"])) / 5
+            xlim = min(sample_df["x_pred"]) - d_x, max(sample_df["x_pred"]) + d_x
+            ylim = min(sample_df["y_pred"]) - d_y, max(sample_df["y_pred"]) + d_y
+
+            X, Y = np.mgrid[xlim[0]:xlim[1]:100j, ylim[0]:ylim[1]:100j]
+
+            positions = np.vstack([X.ravel(), Y.ravel()])
+            values = np.vstack([sample_df["x_pred"], sample_df["y_pred"]])
+
+            try:
+                kernel = stats.gaussian_kde(values)
+            except (ValueError) as e:
+                raise Exception("Too few points to generate contours") from e
+
+            Z = np.reshape(kernel(positions).T, X.shape)
+            new_z = Z / np.max(Z)
+
+            # Plot
+            fig = plt.figure(figsize=(8, 8))
+            ax = fig.gca()
+            plt.xlim(xlim[0], xlim[1])
+            plt.ylim(ylim[0], ylim[1])
+            cset = ax.contour(X, Y, new_z, levels=num_contours, colors="black")
+
+            cset.levels = -np.sort(-cset.levels)
+
+            for pop in test_locs["pop"].values:
+                x = test_locs[test_locs["pop"] == pop]["x"].values[0]
+                y = test_locs[test_locs["pop"] == pop]["y"].values[0]
+                plt.scatter(x, y, cmap="inferno", label=pop)
+
+            ax.clabel(cset, cset.levels, inline=1, fontsize=10)
+            ax.set_xlabel("Longitude")
+            ax.set_ylabel("Latitude")
+            plt.title(sample)
+            plt.legend()
+
+            # Find predicted pop
+            pred_pop, kd = self.contour_finder(test_locs, cset)
+            classification_data["classification"].append(pred_pop)
+            classification_data["kd_estimate"].append(kd)
+
+            if save_plots is True:
+                plt.savefig(self.output_folder + "/contour_" + \
+                            sample + ".png", format="png")
+
+            plt.close()
+
+        class_df = pd.DataFrame(classification_data)
+
+        if save_data:
+            class_df.to_csv(self.output_folder + "/classification.csv", index=False)
+
+        return class_df
+
+    def contour_finder(self, true_dat, cset):
+        """
+        Finds population in densest contour.
+
+        Parameters
+        ----------
+        true_dat : pd.DataFrame
+            Dataframe containing x and y coordinates of all populations in
+            training set.
+        cset : matplotlib.contour.QuadContourSet
+            Contour values for each contour polygon.
+
+        Returns
+        pred_pop : string
+            Name of population in densest contour.
+        """
+
+        cont_dict = {"pop": [], "cont": []}
+
+        for pop in true_dat["pop"].values:
+            cont_dict["pop"].append(pop)
+            cont = 0
+            point = np.array(
+                [
+                    [
+                        true_dat[true_dat["pop"] == pop]["x"].values[0],
+                        true_dat[true_dat["pop"] == pop]["y"].values[0],
+                    ]
+                ]
+            )
+
+            for i in range(1, len(cset.allsegs)):
+                for j in range(len(cset.allsegs[i])):
+                    path = matplotlib.path.Path(cset.allsegs[i][j].tolist())
+                    inside = path.contains_points(point)
+                    if inside[0]:
+                        cont = i
+                        break
+                    else:
+                        next
+            cont_dict["cont"].append(np.round(cset.levels[cont], 2))
+
+        pred_pop = cont_dict["pop"][np.argmin(cont_dict["cont"])]
+
+        return pred_pop, min(cont_dict["cont"])
 
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
                              net, optimizer, loss_func):
