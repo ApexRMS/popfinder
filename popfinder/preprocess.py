@@ -9,7 +9,7 @@ import os
 from sklearn.model_selection import RepeatedStratifiedKFold, train_test_split
 
 class GeneticData():
-    def __init__(self, genetic_data, sample_data, test_size=0.2, seed=123):
+    def __init__(self, genetic_data=None, sample_data=None, test_size=0.2, seed=123):
 
         self.genetic_data = genetic_data
         self.sample_data = sample_data
@@ -18,9 +18,9 @@ class GeneticData():
         self.meanlat = None
         self.stdlon = None
         self.stdlat = None
-        self.data = self.read_data()
-        self.knowns, self.unknowns = self.split_unknowns(self.data)
-        self.train, self.test = self.split_train_test(test_size=test_size, seed=seed)
+
+        if genetic_data is not None and sample_data is not None:
+            self._initialize(test_size=test_size, seed=seed)
 
     def read_data(self):
         """
@@ -83,7 +83,7 @@ class GeneticData():
 
         return known, unknown
 
-    def split_train_test(self, stratify_by_pop=True, test_size=0.2, seed=123):
+    def split_train_test(self, data=None, stratify_by_pop=True, test_size=0.2, seed=123):
         """
         Splits data into training and testing sets.
         
@@ -107,13 +107,13 @@ class GeneticData():
         """
         # Split data into training and testing
         if stratify_by_pop is True:
-            train, test = self._stratified_split(test_size=test_size, seed=seed)
+            train, test = self._stratified_split(data, test_size=test_size, seed=seed)
         else:
-            train, test = self._random_split(test_size=test_size, seed=seed)
+            train, test = self._random_split(data, test_size=test_size, seed=seed)
 
         return train, test
 
-    def split_kfcv(self, n_splits=5, n_reps=1, stratify_by_pop=True):
+    def split_kfcv(self, data=None, n_splits=5, n_reps=1, stratify_by_pop=True):
         """
         Splits data into training and testing sets.
 
@@ -138,7 +138,10 @@ class GeneticData():
                                        random_state=self.seed)
         dataset_list = []
 
-        known_data = self.knowns.copy()
+        if data is None:
+            known_data = self.knowns.copy()
+        else:
+            known_data = data
 
         if stratify_by_pop:
             for _, (train_ind, test_ind) in enumerate(rskf.split(known_data["alleles"],
@@ -157,6 +160,12 @@ class GeneticData():
                 dataset_list.append(dataset_tuple)
 
         return dataset_list
+
+    def _initialize(self, test_size=0.2, seed=123):
+
+        self.data = self.read_data()
+        self.knowns, self.unknowns = self.split_unknowns(self.data)
+        self.train, self.test = self.split_train_test(test_size=test_size, seed=seed)
 
     def _load_genotypes(self, genetic_data):
 
@@ -216,11 +225,14 @@ class GeneticData():
 
         return locs
 
-    def _stratified_split(self, test_size=0.2, seed=123):
+    def _stratified_split(self, data, test_size=0.2, seed=123):
+
+        if data is None:
+            data = self.knowns
 
         X_train, X_test, y_train, y_test = train_test_split(
-            self.knowns["alleles"], self.knowns[["x", "y", "pop"]],
-            stratify=self.knowns["pop"],
+            data["alleles"], data[["x", "y", "pop"]],
+            stratify=data["pop"],
             random_state=seed, test_size=test_size)
 
         train = pd.concat([X_train, y_train], axis=1)
@@ -230,8 +242,11 @@ class GeneticData():
 
     def _random_split(self, test_size=0.2, seed=123):
 
+        if data is None:
+            data = self.knowns
+
         X_train, X_test, y_train, y_test = train_test_split(
-        self.knowns["alleles"], self.knowns[["x", "y", "pop"]],
+        data["alleles"], data[["x", "y", "pop"]],
         random_state=seed, test_size=test_size)
 
         train = pd.concat([X_train, y_train], axis=1)

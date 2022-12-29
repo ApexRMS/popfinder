@@ -7,11 +7,11 @@ import numpy as np
 def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123):
 
     if cv_splits == 1:
-        train_input, valid_input = data_obj.split_train_test(test_size=valid_size, seed=seed)
+        train_input, valid_input = data_obj.split_train_test(data_obj.train, test_size=valid_size, seed=seed)
         inputs = [(train_input, valid_input)]
 
     elif cv_splits > 1:
-        inputs = data_obj.split_kfcv(n_splits=cv_splits, n_reps=cv_reps, seed=seed)
+        inputs = data_obj.split_kfcv(data_obj.train, n_splits=cv_splits, n_reps=cv_reps, seed=seed)
 
     return inputs
 
