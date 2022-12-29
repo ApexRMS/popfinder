@@ -10,7 +10,6 @@ import seaborn as sn
 import numpy as np
 import pandas as pd
 import os
-import itertools
 
 from popfinder.preprocess import GeneticData
 from popfinder._neural_networks import RegressorNet
@@ -18,6 +17,9 @@ from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
 from popfinder._helper import _data_converter
 from popfinder._helper import _split_input_regressor
+from popfinder._visualize import _plot_assignment
+from popfinder._visualize import _plot_training_curve
+from popfinder._visualize import _plot_confusion_matrix
 
 class PopRegressor(object):
     """
@@ -45,6 +47,8 @@ class PopRegressor(object):
         self.classification_recall = None
         self.classification_f1 = None
         self.classification_confusion_matrix = None
+
+        self._nn_type = "regressor"
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, boot_data=None):
         
@@ -188,22 +192,8 @@ class PopRegressor(object):
     # Plotting functions below
     def plot_training_curve(self, save=True):
 
-        plt.switch_backend("agg")
-        fig = plt.figure(figsize=(3, 1.5), dpi=200)
-        plt.rcParams.update({"font.size": 7})
-        ax1 = fig.add_axes([0, 0, 1, 1])
-        ax1.plot(self.train_history["valid"][3:], "--", color="black",
-            lw=0.5, label="Validation Loss")
-        ax1.plot(self.train_history["train"][3:], "-", color="black",
-            lw=0.5, label="Training Loss")
-        ax1.set_xlabel("Epoch")
-        ax1.legend()
-
-        if save:
-            fig.savefig(self.output_folder + "/training_history.png",
-                bbox_inches="tight")
-
-        plt.close()
+        _plot_training_curve(self.train_history, self._nn_type,
+            self.output_folder, save)
 
     def plot_location():
         pass
@@ -217,29 +207,8 @@ class PopRegressor(object):
         labels generated from the test data to give a visual representation
         of the accuracy of the model.
         """
-        true_labels = self.classification_test_results["true_pop"]
-
-        cm = np.round(self.classification_confusion_matrix, 2)
-        plt.style.use("default")
-        plt.figure()
-        plt.imshow(cm, cmap="Blues")
-        plt.colorbar()
-        plt.ylabel("True Population")
-        plt.xlabel("Predicted Population")
-        plt.title("Confusion Matrix")
-        tick_marks = np.arange(len(np.unique(true_labels)))
-        plt.xticks(tick_marks, np.unique(true_labels))
-        plt.yticks(tick_marks, np.unique(true_labels))
-        thresh = cm.max() / 2.0
-        for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-            plt.text(j, i, cm[i, j], horizontalalignment="center",
-                color="white" if cm[i, j] > thresh else "black")
-        plt.tight_layout()
-
-        if save:
-            plt.savefig(self.output_folder + "/confusion_matrix.png")
-
-        plt.close()
+        _plot_confusion_matrix(self.test_results, self.confusion_matrix,
+            self._nn_type, self.output_folder, save)
 
     def plot_roc_curve():
         pass # add later
@@ -248,34 +217,11 @@ class PopRegressor(object):
 
         if self.contour_classification is None:
             raise ValueError("No classification results to plot.")
-        # Put code in shared function for both classifier and regressor?
+
         e_preds = self.contour_classification.copy()
-        e_preds.set_index("sampleID", inplace=True)
-        e_preds = pd.get_dummies(e_preds["classification"])
-        num_classes = len(e_preds.columns) # will need to double check
 
-        sn.set()
-        sn.set_style("ticks")
-        e_preds.plot(kind="bar", stacked=True,
-            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
-            figsize=(12, 6), grid=None)
-        legend = plt.legend(
-            loc="center right",
-            bbox_to_anchor=(1.2, 0.5),
-            prop={"size": 15},
-            title="Predicted Population",
-        )
-        plt.setp(legend.get_title(), fontsize="x-large")
-        plt.xlabel("Sample ID", fontsize=20)
-        plt.ylabel("Frequency of Assignment", fontsize=20)
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-
-        if save:
-            plt.savefig(self.output_folder + "/assignment_plot.png",
-                bbox_inches="tight")
-
-        plt.close()
+        _plot_assignment(e_preds, col_scheme, self.output_folder,
+            self._nn_type, save)
 
     def plot_structure(self, preds, save=True, col_scheme="Spectral"):
         """
