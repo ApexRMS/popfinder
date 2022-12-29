@@ -39,7 +39,12 @@ class PopRegressor(object):
         self.r2_long = None
         self.summary = None
         self.contour_classification = None
-
+        self.classification_test_results = None
+        self.classification_accuracy = None
+        self.classification_precision = None
+        self.classification_recall = None
+        self.classification_f1 = None
+        self.classification_confusion_matrix = None
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, boot_data=None):
         
@@ -166,120 +171,24 @@ class PopRegressor(object):
         self.test_locs_final = test_locs_final # option to save
         self.pred_locs_final = pred_locs_final # option to save
 
-    def generate_contours(self, num_contours=5, save_plots=True, 
+    def classify_by_contours(self, num_contours=5, save_plots=True, 
                           save_data=True):
 
         test_locs = self.test_locs_final
         pred_locs = self.pred_locs_final
 
-        classification_data = {"sampleID": [], "classification": [], "kd_estimate": []}
-
-        for sample in pred_locs["sampleID"].unique():
-
-            sample_df = pred_locs[pred_locs["sampleID"] == sample]
-            classification_data["sampleID"].append(sample)
-            d_x = (max(sample_df["x_pred"]) - min(sample_df["x_pred"])) / 5
-            d_y = (max(sample_df["y_pred"]) - min(sample_df["y_pred"])) / 5
-            xlim = min(sample_df["x_pred"]) - d_x, max(sample_df["x_pred"]) + d_x
-            ylim = min(sample_df["y_pred"]) - d_y, max(sample_df["y_pred"]) + d_y
-
-            X, Y = np.mgrid[xlim[0]:xlim[1]:100j, ylim[0]:ylim[1]:100j]
-
-            positions = np.vstack([X.ravel(), Y.ravel()])
-            values = np.vstack([sample_df["x_pred"], sample_df["y_pred"]])
-
-            try:
-                kernel = stats.gaussian_kde(values)
-            except (ValueError) as e:
-                raise Exception("Too few points to generate contours") from e
-
-            Z = np.reshape(kernel(positions).T, X.shape)
-            new_z = Z / np.max(Z)
-
-            # Plot
-            fig = plt.figure(figsize=(8, 8))
-            ax = fig.gca()
-            plt.xlim(xlim[0], xlim[1])
-            plt.ylim(ylim[0], ylim[1])
-            cset = ax.contour(X, Y, new_z, levels=num_contours, colors="black")
-
-            cset.levels = -np.sort(-cset.levels)
-
-            for pop in np.unique(test_locs["pop"].values):
-                x = test_locs[test_locs["pop"] == pop]["x"].values[0]
-                y = test_locs[test_locs["pop"] == pop]["y"].values[0]
-                plt.scatter(x, y, cmap=plt.cm.Spectral, label=pop)
-
-            ax.clabel(cset, cset.levels, inline=1, fontsize=10)
-            ax.set_xlabel("Longitude")
-            ax.set_ylabel("Latitude")
-            plt.title(sample)
-            plt.legend()
-
-            # Find predicted pop
-            pred_pop, kd = self.contour_finder(test_locs, cset)
-            classification_data["classification"].append(pred_pop)
-            classification_data["kd_estimate"].append(kd)
-
-            if save_plots is True:
-                plt.savefig(self.output_folder + "/contour_" + \
-                            sample + ".png", format="png")
-
-            plt.close()
-
-        self.contour_classification = pd.DataFrame(classification_data)
+        self.test_report = self._test_classification(test_locs,
+            num_contours, save_plots)
+        self.contour_classification = self._classify_unknowns(test_locs,
+            pred_locs, num_contours, save_plots)
 
         if save_data:
-            self.contour_classification.to_csv(self.output_folder + \
-                "/classification.csv", index=False)
+            self.test_report.to_csv(os.path.join(self.output_folder,
+                "contour_classification_test_report.csv"), index=False)
+            self.contour_classification.to_csv(os.path.join(self.output_folder,
+                "contour_classification_results.csv"), index=False)
 
-        return self.contour_classification
-
-    def contour_finder(self, true_dat, cset):
-        """
-        Finds population in densest contour.
-
-        Parameters
-        ----------
-        true_dat : pd.DataFrame
-            Dataframe containing x and y coordinates of all populations in
-            training set.
-        cset : matplotlib.contour.QuadContourSet
-            Contour values for each contour polygon.
-
-        Returns
-        pred_pop : string
-            Name of population in densest contour.
-        """
-
-        cont_dict = {"pop": [], "cont": []}
-
-        for pop in true_dat["pop"].values:
-            cont_dict["pop"].append(pop)
-            cont = 0
-            point = np.array(
-                [
-                    [
-                        true_dat[true_dat["pop"] == pop]["x"].values[0],
-                        true_dat[true_dat["pop"] == pop]["y"].values[0],
-                    ]
-                ]
-            )
-
-            for i in range(1, len(cset.allsegs)):
-                for j in range(len(cset.allsegs[i])):
-                    path = matplotlib.path.Path(cset.allsegs[i][j].tolist())
-                    inside = path.contains_points(point)
-                    if inside[0]:
-                        cont = i
-                        break
-                    else:
-                        next
-            cont_dict["cont"].append(np.round(cset.levels[cont], 2))
-
-        pred_pop = cont_dict["pop"][np.argmin(cont_dict["cont"])]
-
-        return pred_pop, min(cont_dict["cont"])
+        # Generate classification summary stats from test_report
 
     # Reporting functions below
     def get_assignment_summary(self):
@@ -332,7 +241,11 @@ class PopRegressor(object):
         pass
 
     def plot_confusion_matrix(self, true_labels, pred_labels, save=True):
-
+        """
+        Plots confusion matrix. This functions uses the true and predicted
+        labels generated from the test data to give a visual representation
+        of the accuracy of the model.
+        """
         cm = confusion_matrix(true_labels, pred_labels, normalize="true")
         cm = np.round(cm, 2)
         plt.style.use("default")
@@ -357,7 +270,7 @@ class PopRegressor(object):
         plt.close()
 
     def plot_roc_curve():
-        pass
+        pass # add later
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 
@@ -488,4 +401,145 @@ class PopRegressor(object):
             ] for x in y_pred])
 
         return y_pred_norm
+
+    def _test_classification(self, test_locs, num_contours, save_plots):
+
+        test_report = {"sampleID": [], "true_pop": [],
+                       "pred_pop": [], "kd_estimate": []}
+
+        for sample in test_locs["sampleID"].unique():
+
+            sample_df = test_locs[test_locs["sampleID"] == sample]
+
+            X, Y, Z, xlim, ylim = self._generate_kde(sample_df)
+            cset = self._find_cset_from_contours(X, Y, Z, xlim,
+                ylim, test_locs, num_contours, sample, save_plots)
+
+            # Find predicted pop
+            pred_pop, kd = self._contour_finder(test_locs, cset)
+            test_report["sampleID"].append(sample)
+            test_report["true_pop"].append(sample_df["pop"].unique[0]) #test
+            test_report["pred_pop"].append(pred_pop)
+            test_report["kd_estimate"].append(kd)
+
+        return pd.DataFrame(test_report)
+
+    def _classify_unknowns(self, pred_locs, test_locs, num_contours, save_plots):
+
+        classification_data = {"sampleID": [], "classification": [], "kd_estimate": []}
+
+        for sample in pred_locs["sampleID"].unique():
+
+            sample_df = pred_locs[pred_locs["sampleID"] == sample]
+
+            X, Y, Z, xlim, ylim = self._generate_kde(sample_df)
+            cset = self._find_cset_from_contours(X, Y, Z, xlim,
+                ylim, test_locs, num_contours, sample, save_plots)
+
+            # Find predicted pop
+            pred_pop, kd = self._contour_finder(test_locs, cset)
+            classification_data["sampleID"].append(sample)
+            classification_data["classification"].append(pred_pop)
+            classification_data["kd_estimate"].append(kd)
+
+        return pd.DataFrame(classification_data)
+
+    def _contour_finder(self, true_dat, cset):
+        """
+        Finds population in densest contour.
+
+        Parameters
+        ----------
+        true_dat : pd.DataFrame
+            Dataframe containing x and y coordinates of all populations in
+            training set.
+        cset : matplotlib.contour.QuadContourSet
+            Contour values for each contour polygon.
+
+        Returns
+        pred_pop : string
+            Name of population in densest contour.
+        """
+
+        cont_dict = {"pop": [], "cont": []}
+
+        for pop in true_dat["pop"].values:
+            cont_dict["pop"].append(pop)
+            cont = 0
+            point = np.array(
+                [
+                    [
+                        true_dat[true_dat["pop"] == pop]["x"].values[0],
+                        true_dat[true_dat["pop"] == pop]["y"].values[0],
+                    ]
+                ]
+            )
+
+            for i in range(1, len(cset.allsegs)):
+                for j in range(len(cset.allsegs[i])):
+                    path = matplotlib.path.Path(cset.allsegs[i][j].tolist())
+                    inside = path.contains_points(point)
+                    if inside[0]:
+                        cont = i
+                        break
+                    else:
+                        next
+            cont_dict["cont"].append(np.round(cset.levels[cont], 2))
+
+        pred_pop = cont_dict["pop"][np.argmin(cont_dict["cont"])]
+
+        return pred_pop, min(cont_dict["cont"])
+
+    def _generate_kde(self, sample_df):
+
+        d_x = (max(sample_df["x_pred"]) - min(sample_df["x_pred"])) / 5
+        d_y = (max(sample_df["y_pred"]) - min(sample_df["y_pred"])) / 5
+        xlim = min(sample_df["x_pred"]) - d_x, max(sample_df["x_pred"]) + d_x
+        ylim = min(sample_df["y_pred"]) - d_y, max(sample_df["y_pred"]) + d_y
+
+        X, Y = np.mgrid[xlim[0]:xlim[1]:100j, ylim[0]:ylim[1]:100j]
+
+        positions = np.vstack([X.ravel(), Y.ravel()])
+        values = np.vstack([sample_df["x_pred"], sample_df["y_pred"]])
+
+        try:
+            kernel = stats.gaussian_kde(values)
+        except (ValueError) as e:
+            raise Exception("Too few points to generate contours") from e
+
+        Z = np.reshape(kernel(positions).T, X.shape)
+        new_z = Z / np.max(Z)
+
+        return X, Y, new_z, xlim, ylim
+
+    def _find_cset_from_contours(self, X, Y, Z, xlim, ylim, test_locs, num_contours,
+                       sample, save):
+
+        # Plot
+        fig = plt.figure(figsize=(8, 8))
+        ax = fig.gca()
+        plt.xlim(xlim[0], xlim[1])
+        plt.ylim(ylim[0], ylim[1])
+        cset = ax.contour(X, Y, Z, levels=num_contours, colors="black")
+
+        cset.levels = -np.sort(-cset.levels)
+
+        for pop in np.unique(test_locs["pop"].values):
+            x = test_locs[test_locs["pop"] == pop]["x"].values[0]
+            y = test_locs[test_locs["pop"] == pop]["y"].values[0]
+            plt.scatter(x, y, cmap=plt.cm.Spectral, label=pop)
+
+        ax.clabel(cset, cset.levels, inline=1, fontsize=10)
+        ax.set_xlabel("Longitude")
+        ax.set_ylabel("Latitude")
+        plt.title(sample)
+        plt.legend()
+
+        if save:
+            plt.savefig(self.output_folder + "/contour_" + \
+                        sample + ".png", format="png")
+
+        plt.close()
+
+        return cset
         

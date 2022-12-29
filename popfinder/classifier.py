@@ -32,8 +32,13 @@ class PopClassifier(object):
         self.label_enc = None
         self.train_history = None
         self.best_model = None
+        self.test_results = None # use for cm and structure plot
         self.classification_data = None # use for assignment plot
         self.accuracy = None
+        self.precision = None
+        self.recall = None
+        self.f1 = None
+        self.confusion_matrix = None
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
 
@@ -106,7 +111,16 @@ class PopClassifier(object):
         correct = (y_pred == y_test.squeeze())
         accuracy = correct.sum() / len(correct)
 
+        self.test_results = pd.DataFrame({"y_test": y_test.squeeze(),
+                                          "y_pred": y_pred})
+        self.confusion_matrix = confusion_matrix(y_test, y_pred)
         self.accuracy = np.round(accuracy.data.item(), 3)
+        self.precision = np.round(
+            np.diag(self.confusion_matrix) / np.sum(self.confusion_matrix, axis=0), 3)
+        self.recall = np.round(
+            np.diag(self.confusion_matrix) / np.sum(self.confusion_matrix, axis=1), 3)
+        self.f1 = np.round(
+            2 * (self.precision * self.recall) / (self.precision + self.recall), 3)
 
         return self.accuracy
 
@@ -151,13 +165,16 @@ class PopClassifier(object):
         ax1.legend()
 
         if save:
-            fig.savefig(self.output_folder + "/training_history.pdf",
+            fig.savefig(self.output_folder + "/training_history.png",
                 bbox_inches="tight")
 
         plt.close()
 
-    def plot_confusion_matrix(self, true_labels, pred_labels, save=True):
+    def plot_confusion_matrix(self, save=True):
 
+        true_labels = self.test_results["y_test"]
+        pred_labels = self.test_results["y_pred"]
+        
         cm = confusion_matrix(true_labels, pred_labels, normalize="true")
         cm = np.round(cm, 2)
         plt.style.use("default")
@@ -183,7 +200,7 @@ class PopClassifier(object):
 
     def plot_roc_curve():
 
-        pass
+        pass # add later
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 
