@@ -1,9 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+import seaborn as sn
 import numpy as np
 import pandas as pd
 import os
+import itertools
 
 from popfinder._neural_networks import ClassifierNet
 from popfinder._helper import _generate_train_inputs
@@ -27,6 +32,7 @@ class PopClassifier(object):
         self.label_enc = None
         self.train_history = None
         self.best_model = None
+        self.classification_data = None # use for assignment plot
         self.accuracy = None
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
@@ -116,11 +122,135 @@ class PopClassifier(object):
         unknown_data.loc[:, "assigned_pop"] = preds
         
         return unknown_data
+  
+    # Reporting functions below
+    def get_classification_summary(self):
 
-    def get_assignment_summary(self):
-
-        summary = {
-            "accuracy": self.accuracy,
+        summary = { # need to grab all these items
+            "accuracy": [self.accuracy],
+            "precision": [self.precision],
+            "recall": [self.recall],
+            "f1": [self.f1],
+            "confusion_matrix": [self.confusion_matrix]
         }
 
         return summary
+
+    # Plotting functions below
+    def plot_training_curve(self, save=True):
+
+        plt.switch_backend("agg")
+        fig = plt.figure(figsize=(3, 1.5), dpi=200)
+        plt.rcParams.update({"font.size": 7})
+        ax1 = fig.add_axes([0, 0, 1, 1])
+        ax1.plot(self.train_history["valid"][3:], "--", color="black",
+            lw=0.5, label="Validation Loss")
+        ax1.plot(self.train_history["train"][3:], "-", color="black",
+            lw=0.5, label="Training Loss")
+        ax1.set_xlabel("Epoch")
+        ax1.legend()
+
+        if save:
+            fig.savefig(self.output_folder + "/training_history.pdf",
+                bbox_inches="tight")
+
+        plt.close()
+
+    def plot_confusion_matrix(self, true_labels, pred_labels, save=True):
+
+        cm = confusion_matrix(true_labels, pred_labels, normalize="true")
+        cm = np.round(cm, 2)
+        plt.style.use("default")
+        plt.figure()
+        plt.imshow(cm, cmap="Blues")
+        plt.colorbar()
+        plt.ylabel("True Population")
+        plt.xlabel("Predicted Population")
+        plt.title("Confusion Matrix")
+        tick_marks = np.arange(len(np.unique(true_labels)))
+        plt.xticks(tick_marks, np.unique(true_labels))
+        plt.yticks(tick_marks, np.unique(true_labels))
+        thresh = cm.max() / 2.0
+        for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+            plt.text(j, i, cm[i, j], horizontalalignment="center",
+                color="white" if cm[i, j] > thresh else "black")
+        plt.tight_layout()
+
+        if save:
+            plt.savefig(self.output_folder + "/cm.png")
+
+        plt.close()
+
+    def plot_roc_curve():
+
+        pass
+
+    def plot_assignment(self, save=True, col_scheme="Spectral"):
+
+        e_preds = self.classification_data.copy()
+        e_preds.set_index("sampleID", inplace=True)
+        num_classes = len(e_preds.columns) # will need to double check
+
+        sn.set()
+        sn.set_style("ticks")
+        e_preds.plot(kind="bar", stacked=True,
+            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+            figsize=(12, 6), grid=None)
+        legend = plt.legend(
+            loc="center right",
+            bbox_to_anchor=(1.2, 0.5),
+            prop={"size": 15},
+            title="Predicted Population",
+        )
+        plt.setp(legend.get_title(), fontsize="x-large")
+        plt.xlabel("Sample ID", fontsize=20)
+        plt.ylabel("Frequency of Assignment", fontsize=20)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        if save:
+            plt.savefig(self.output_folder + "/assignment_plot.png",
+                bbox_inches="tight")
+
+        plt.close()
+
+    def plot_structure(self, preds, save=True, col_scheme="Spectral"):
+        """
+        Plots the proportion of times individuals from the
+        test data were assigned to the correct population. 
+        Used for determining the accuracy of the classifier.
+        """
+        preds = preds.drop(preds.columns[0], axis=1) # replace preds
+        npreds = preds.groupby(["true_pops"]).agg("mean")
+        npreds = npreds.sort_values("true_pops", ascending=True)
+        npreds = npreds / np.sum(npreds, axis=1)
+
+        # Make sure values are correct
+        if not np.round(np.sum(npreds, axis=1), 2).eq(1).all():
+            raise ValueError("Incorrect input values")
+
+        # Find number of unique classes
+        num_classes = len(npreds.index)
+
+        if not len(npreds.index) == len(npreds.columns):
+            raise ValueError(
+                "Number of pops does not \
+                match number of predicted pops"
+            )
+
+        sn.set()
+        sn.set_style("ticks")
+        npreds.plot(kind="bar", stacked=True,
+            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+            figsize=(12, 6), grid=None)
+        legend = plt.legend(loc="center right", bbox_to_anchor=(1.2, 0.5),
+            prop={"size": 15}, title="Predicted Pop")
+        plt.setp(legend.get_title(), fontsize="x-large")
+        plt.xlabel("Actual Pop", fontsize=20)
+        plt.ylabel("Frequency of Assignment", fontsize=20)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        if save:
+            plt.savefig(self.output_folder + "/structure_plot.png",
+                bbox_inches="tight")

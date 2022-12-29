@@ -2,11 +2,15 @@ import torch
 from torch.autograd import Variable
 from scipy import spatial
 from scipy import stats
+from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import matplotlib
+import seaborn as sn
 import numpy as np
 import pandas as pd
 import os
+import itertools
 
 from popfinder.preprocess import GeneticData
 from popfinder._neural_networks import RegressorNet
@@ -34,6 +38,7 @@ class PopRegressor(object):
         self.r2_lat = None
         self.r2_long = None
         self.summary = None
+        self.contour_classification = None
 
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, boot_data=None):
@@ -122,17 +127,6 @@ class PopRegressor(object):
 
         return unknown_data
 
-    def get_assignment_summary(self):
-
-        summary = {
-            "median_distance": [self.median_distance],
-            "mean_distance": [self.mean_distance],
-            "r2_long": [self.r2_long],
-            "r2_lat": [self.r2_lat]
-        }
-
-        return summary
-
     def generate_bootstraps(self, nboots=50):
 
         test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
@@ -214,7 +208,7 @@ class PopRegressor(object):
             for pop in np.unique(test_locs["pop"].values):
                 x = test_locs[test_locs["pop"] == pop]["x"].values[0]
                 y = test_locs[test_locs["pop"] == pop]["y"].values[0]
-                plt.scatter(x, y, cmap="inferno", label=pop)
+                plt.scatter(x, y, cmap=plt.cm.Spectral, label=pop)
 
             ax.clabel(cset, cset.levels, inline=1, fontsize=10)
             ax.set_xlabel("Longitude")
@@ -233,12 +227,13 @@ class PopRegressor(object):
 
             plt.close()
 
-        class_df = pd.DataFrame(classification_data)
+        self.contour_classification = pd.DataFrame(classification_data)
 
         if save_data:
-            class_df.to_csv(self.output_folder + "/classification.csv", index=False)
+            self.contour_classification.to_csv(self.output_folder + \
+                "/classification.csv", index=False)
 
-        return class_df
+        return self.contour_classification
 
     def contour_finder(self, true_dat, cset):
         """
@@ -286,6 +281,156 @@ class PopRegressor(object):
 
         return pred_pop, min(cont_dict["cont"])
 
+    # Reporting functions below
+    def get_assignment_summary(self):
+
+        summary = {
+            "median_distance": [self.median_distance],
+            "mean_distance": [self.mean_distance],
+            "r2_long": [self.r2_long],
+            "r2_lat": [self.r2_lat]
+        }
+
+        return summary
+
+    def get_classification_summary(self):
+
+        summary = { # need to grab all these items
+            "accuracy": [self.accuracy],
+            "precision": [self.precision],
+            "recall": [self.recall],
+            "f1": [self.f1],
+            "confusion_matrix": [self.confusion_matrix]
+        }
+
+        return summary
+
+    # Plotting functions below
+    def plot_training_curve(self, save=True):
+
+        plt.switch_backend("agg")
+        fig = plt.figure(figsize=(3, 1.5), dpi=200)
+        plt.rcParams.update({"font.size": 7})
+        ax1 = fig.add_axes([0, 0, 1, 1])
+        ax1.plot(self.train_history["valid"][3:], "--", color="black",
+            lw=0.5, label="Validation Loss")
+        ax1.plot(self.train_history["train"][3:], "-", color="black",
+            lw=0.5, label="Training Loss")
+        ax1.set_xlabel("Epoch")
+        ax1.legend()
+
+        if save:
+            fig.savefig(self.output_folder + "/training_history.pdf",
+                bbox_inches="tight")
+
+        plt.close()
+
+    def plot_location():
+        pass
+
+    def plot_contour_map():
+        pass
+
+    def plot_confusion_matrix(self, true_labels, pred_labels, save=True):
+
+        cm = confusion_matrix(true_labels, pred_labels, normalize="true")
+        cm = np.round(cm, 2)
+        plt.style.use("default")
+        plt.figure()
+        plt.imshow(cm, cmap="Blues")
+        plt.colorbar()
+        plt.ylabel("True Population")
+        plt.xlabel("Predicted Population")
+        plt.title("Confusion Matrix")
+        tick_marks = np.arange(len(np.unique(true_labels)))
+        plt.xticks(tick_marks, np.unique(true_labels))
+        plt.yticks(tick_marks, np.unique(true_labels))
+        thresh = cm.max() / 2.0
+        for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+            plt.text(j, i, cm[i, j], horizontalalignment="center",
+                color="white" if cm[i, j] > thresh else "black")
+        plt.tight_layout()
+
+        if save:
+            plt.savefig(self.output_folder + "/cm.png")
+
+        plt.close()
+
+    def plot_roc_curve():
+        pass
+
+    def plot_assignment(self, save=True, col_scheme="Spectral"):
+
+        # Put code in shared function for both classifier and regressor?
+        e_preds = self.contour_classification.copy()
+        e_preds.set_index("sampleID", inplace=True)
+        num_classes = len(e_preds.columns) # will need to double check
+
+        sn.set()
+        sn.set_style("ticks")
+        e_preds.plot(kind="bar", stacked=True,
+            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+            figsize=(12, 6), grid=None)
+        legend = plt.legend(
+            loc="center right",
+            bbox_to_anchor=(1.2, 0.5),
+            prop={"size": 15},
+            title="Predicted Population",
+        )
+        plt.setp(legend.get_title(), fontsize="x-large")
+        plt.xlabel("Sample ID", fontsize=20)
+        plt.ylabel("Frequency of Assignment", fontsize=20)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        if save:
+            plt.savefig(self.output_folder + "/assignment_plot.png",
+                bbox_inches="tight")
+
+        plt.close()
+
+    def plot_structure(self, preds, save=True, col_scheme="Spectral"):
+        """
+        Plots the proportion of times individuals from the
+        test data were assigned to the correct population. 
+        Used for determining the accuracy of the classifier.
+        """
+        preds = preds.drop(preds.columns[0], axis=1) # replace preds
+        npreds = preds.groupby(["true_pops"]).agg("mean")
+        npreds = npreds.sort_values("true_pops", ascending=True)
+        npreds = npreds / np.sum(npreds, axis=1)
+
+        # Make sure values are correct
+        if not np.round(np.sum(npreds, axis=1), 2).eq(1).all():
+            raise ValueError("Incorrect input values")
+
+        # Find number of unique classes
+        num_classes = len(npreds.index)
+
+        if not len(npreds.index) == len(npreds.columns):
+            raise ValueError(
+                "Number of pops does not \
+                match number of predicted pops"
+            )
+
+        sn.set()
+        sn.set_style("ticks")
+        npreds.plot(kind="bar", stacked=True,
+            colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+            figsize=(12, 6), grid=None)
+        legend = plt.legend(loc="center right", bbox_to_anchor=(1.2, 0.5),
+            prop={"size": 15}, title="Predicted Pop")
+        plt.setp(legend.get_title(), fontsize="x-large")
+        plt.xlabel("Actual Pop", fontsize=20)
+        plt.ylabel("Frequency of Assignment", fontsize=20)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        if save:
+            plt.savefig(self.output_folder + "/structure_plot.png",
+                bbox_inches="tight")
+
+    # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
                              net, optimizer, loss_func):
 
