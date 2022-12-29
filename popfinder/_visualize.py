@@ -1,4 +1,4 @@
-import seaborn as sn
+import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import pandas as pd
@@ -64,10 +64,10 @@ def _plot_assignment(e_preds, col_scheme, output_folder,
 
     num_classes = len(e_preds.columns)
 
-    sn.set()
-    sn.set_style("ticks")
+    sns.set()
+    sns.set_style("ticks")
     e_preds.plot(kind="bar", stacked=True,
-        colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+        colormap=ListedColormap(sns.color_palette(col_scheme, num_classes)),
         figsize=(12, 6), grid=None)
     legend = plt.legend(
         loc="center right",
@@ -93,10 +93,10 @@ def _plot_structure(preds, col_scheme, nn_type, output_folder, save):
 
     num_classes = len(preds.index)
 
-    sn.set()
-    sn.set_style("ticks")
+    sns.set()
+    sns.set_style("ticks")
     preds.plot(kind="bar", stacked=True,
-        colormap=ListedColormap(sn.color_palette(col_scheme, num_classes)),
+        colormap=ListedColormap(sns.color_palette(col_scheme, num_classes)),
         figsize=(12, 6), grid=None)
     legend = plt.legend(loc="center right", bbox_to_anchor=(1.2, 0.5),
         prop={"size": 15}, title="Predicted Pop")

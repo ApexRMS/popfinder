@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precisio
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import matplotlib
-import seaborn as sn
+import seaborn as sns
 import numpy as np
 import pandas as pd
 import os
@@ -137,6 +137,8 @@ class PopRegressor(object):
         unknown_data.loc[:, "x_pred"] = y_pred[:, 0]
         unknown_data.loc[:, "y_pred"] = y_pred[:, 1]
 
+        self.regression = unknown_data
+
         return unknown_data
 
     def classify_by_contours(self, nboots=5, num_contours=5,
@@ -198,10 +200,42 @@ class PopRegressor(object):
         _plot_training_curve(self.train_history, self._nn_type,
             self.output_folder, save)
 
-    def plot_location():
-        pass
+    def plot_location(self, sampleID=None, save=True):
+        
+        if sampleID is None:
+            sample_list = self.regression.sampleID.unique()
+        else:
+            sample_list = [sampleID]
 
-    def plot_contour_map():
+        unique_test_data = self.data.test.drop_duplicates(subset=["pop"])
+
+        sample_data = pd.DataFrame()
+        for sample in sample_list:
+            pred_sample_df = pd.DataFrame()
+            pred_sample_df["x"] = self.regression[self.regression["sampleID"] == sample
+                ]["x_pred"].values
+            pred_sample_df["y"] = self.regression[self.regression["sampleID"] == sample
+                ]["y_pred"].values
+            pred_sample_df["pop"] = "prediction"
+            pred_sample_df["sampleID"] = sample
+
+            pop_sample_df = pd.DataFrame()
+            pop_sample_df["x"] = unique_test_data["x"].values
+            pop_sample_df["y"] = unique_test_data["y"].values
+            pop_sample_df["pop"] = unique_test_data["pop"].values
+            pop_sample_df["sampleID"] = sample
+
+            sample_data = pd.concat([sample_data, pred_sample_df, pop_sample_df], axis=0)
+
+        g = sns.FacetGrid(sample_data, hue="pop", col="sampleID",
+            col_wrap=3, height=3) # Create custom colour palette to highlight pred
+        g.map(plt.scatter, "x", "y", s=50)
+        g.add_legend()
+
+        if save:
+            plt.savefig(os.path.join(self.output_folder, "location_plot.png"))
+
+    def plot_contour_map(self, sampleID=None):
         pass
 
     def plot_confusion_matrix(self, save=True):

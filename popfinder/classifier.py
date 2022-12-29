@@ -3,7 +3,6 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
-import seaborn as sn
 import numpy as np
 import pandas as pd
 import os
