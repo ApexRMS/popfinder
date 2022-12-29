@@ -132,47 +132,10 @@ class PopRegressor(object):
 
         return unknown_data
 
-    def generate_bootstraps(self, nboots=50):
+    def classify_by_contours(self, nboots=5, num_contours=5,
+        save_plots=True, save_data=True):
 
-        test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
-                                        "y": [], "x_pred": [], "y_pred": []})
-        pred_locs_final = pd.DataFrame({"sampleID": [], "pop": [], 
-                                        "x_pred": [], "y_pred": []})    
-
-        # Use bootstrap to randomly select sites from training/test/unknown data
-        num_sites = self.data.train["alleles"].values[0].shape[0]
-
-        for boot in range(nboots):
-            site_indices = np.random.choice(range(num_sites), size=num_sites,
-                                            replace=True)
-
-            boot_data = GeneticData()
-            boot_data.train = self.data.train.copy()
-            boot_data.test = self.data.test.copy()
-            boot_data.knowns = pd.concat([self.data.train, self.data.test])
-            boot_data.unknowns = self.data.unknowns.copy()
-
-            # Slice datasets by site_indices
-            boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
-            boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
-            boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
-
-            # Train on new training set
-            self.train(boot_data=boot_data)
-            test_locs = self.test(boot_data=boot_data)
-            test_locs["sampleID"] = test_locs.index
-            pred_locs = self.assign_unknown(boot_data=boot_data)
-
-            test_locs_final = pd.concat([test_locs_final,
-                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-            pred_locs_final = pd.concat([pred_locs_final,
-                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-
-        self.test_locs_final = test_locs_final # option to save
-        self.pred_locs_final = pred_locs_final # option to save
-
-    def classify_by_contours(self, num_contours=5, save_plots=True, 
-                          save_data=True):
+        self._generate_bootstraps(nboots=nboots) # also add option for multiple reps
 
         test_locs = self.test_locs_final
         pred_locs = self.pred_locs_final
@@ -191,7 +154,7 @@ class PopRegressor(object):
         # Generate classification summary stats from test_report
         y_pred = self.classification_test_results["pred_pop"]
         y_true = self.classification_test_results["true_pop"]
-        self.classification_confusion_matrix = confusion_matrix(y_true, y_pred)
+        self.classification_confusion_matrix = confusion_matrix(y_true, y_pred, normalize=True)
         self.classification_accuracy = accuracy_score(y_true, y_pred)
         self.classification_precision = precision_score(y_true, y_pred, average="weighted")
         self.classification_recall = recall_score(y_true, y_pred, average="weighted")
@@ -254,10 +217,8 @@ class PopRegressor(object):
         of the accuracy of the model.
         """
         true_labels = self.classification_test_results["true_pop"]
-        pred_labels = self.classification_test_results["pred_pop"]
 
-        cm = confusion_matrix(true_labels, pred_labels, normalize="true")
-        cm = np.round(cm, 2)
+        cm = np.round(self.classification_confusion_matrix, 2)
         plt.style.use("default")
         plt.figure()
         plt.imshow(cm, cmap="Blues")
@@ -275,7 +236,7 @@ class PopRegressor(object):
         plt.tight_layout()
 
         if save:
-            plt.savefig(self.output_folder + "/cm.png")
+            plt.savefig(self.output_folder + "/confusion_matrix.png")
 
         plt.close()
 
@@ -411,6 +372,45 @@ class PopRegressor(object):
             ] for x in y_pred])
 
         return y_pred_norm
+
+    def _generate_bootstraps(self, nboots=50):
+
+        test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
+                                        "y": [], "x_pred": [], "y_pred": []})
+        pred_locs_final = pd.DataFrame({"sampleID": [], "pop": [], 
+                                        "x_pred": [], "y_pred": []})    
+
+        # Use bootstrap to randomly select sites from training/test/unknown data
+        num_sites = self.data.train["alleles"].values[0].shape[0]
+
+        for boot in range(nboots):
+            site_indices = np.random.choice(range(num_sites), size=num_sites,
+                                            replace=True)
+
+            boot_data = GeneticData()
+            boot_data.train = self.data.train.copy()
+            boot_data.test = self.data.test.copy()
+            boot_data.knowns = pd.concat([self.data.train, self.data.test])
+            boot_data.unknowns = self.data.unknowns.copy()
+
+            # Slice datasets by site_indices
+            boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
+            boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
+            boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
+
+            # Train on new training set
+            self.train(boot_data=boot_data)
+            test_locs = self.test(boot_data=boot_data)
+            test_locs["sampleID"] = test_locs.index
+            pred_locs = self.assign_unknown(boot_data=boot_data)
+
+            test_locs_final = pd.concat([test_locs_final,
+                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+            pred_locs_final = pd.concat([pred_locs_final,
+                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+
+        self.test_locs_final = test_locs_final # option to save
+        self.pred_locs_final = pred_locs_final # option to save
 
     def _test_classification(self, test_locs, num_contours, save_plots):
 

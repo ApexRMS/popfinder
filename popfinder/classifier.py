@@ -32,7 +32,7 @@ class PopClassifier(object):
         self.train_history = None
         self.best_model = None
         self.test_results = None # use for cm and structure plot
-        self.classification_data = None # use for assignment plot
+        self.classification = None # use for assignment plot
         self.accuracy = None
         self.precision = None
         self.recall = None
@@ -111,11 +111,11 @@ class PopClassifier(object):
 
         self.test_results = pd.DataFrame({"y_test": y_true,
                                           "y_pred": y_pred})
-        self.confusion_matrix = confusion_matrix(y_true, y_pred)
-        self.accuracy = accuracy_score(y_true, y_pred)
-        self.precision = precision_score(y_true, y_pred, average="weighted")
-        self.recall = recall_score(y_true, y_pred, average="weighted")
-        self.f1 = f1_score(y_true, y_pred, average="weighted")
+        self.confusion_matrix = confusion_matrix(y_true, y_pred, normalize="true")
+        self.accuracy = np.round(accuracy_score(y_true, y_pred), 3)
+        self.precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
+        self.recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
+        self.f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
 
     def assign_unknown(self):
         
@@ -127,13 +127,15 @@ class PopClassifier(object):
         preds = self.best_model(X_unknown).argmax(axis=1)
         preds = self.label_enc.inverse_transform(preds)
         unknown_data.loc[:, "assigned_pop"] = preds
+
+        self.classification = unknown_data
         
         return unknown_data
   
     # Reporting functions below
     def get_classification_summary(self):
 
-        summary = { # need to grab all these items
+        summary = {
             "accuracy": [self.accuracy],
             "precision": [self.precision],
             "recall": [self.recall],
@@ -166,10 +168,8 @@ class PopClassifier(object):
     def plot_confusion_matrix(self, save=True):
 
         true_labels = self.test_results["y_test"]
-        pred_labels = self.test_results["y_pred"]
 
-        cm = confusion_matrix(true_labels, pred_labels, normalize="true")
-        cm = np.round(cm, 2)
+        cm = np.round(self.confusion_matrix, 2)
         plt.style.use("default")
         plt.figure()
         plt.imshow(cm, cmap="Blues")
@@ -187,7 +187,7 @@ class PopClassifier(object):
         plt.tight_layout()
 
         if save:
-            plt.savefig(self.output_folder + "/cm.png")
+            plt.savefig(self.output_folder + "/confusion_matrix.png")
 
         plt.close()
 
@@ -197,8 +197,14 @@ class PopClassifier(object):
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 
-        e_preds = self.classification_data.copy()
+        if self.classification is None:
+            raise ValueError("No classification results to plot.")
+
+        e_preds = self.classification.copy()
         e_preds.set_index("sampleID", inplace=True)
+
+        # One hot encode assigned populations
+        e_preds = pd.get_dummies(e_preds["assigned_pop"])
         num_classes = len(e_preds.columns) # will need to double check
 
         sn.set()
@@ -217,6 +223,7 @@ class PopClassifier(object):
         plt.ylabel("Frequency of Assignment", fontsize=20)
         plt.xticks(fontsize=14)
         plt.yticks(fontsize=14)
+        plt.tight_layout()
 
         if save:
             plt.savefig(self.output_folder + "/assignment_plot.png",
