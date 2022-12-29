@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import seaborn as sn
@@ -108,21 +107,15 @@ class PopClassifier(object):
         X_test, y_test = _data_converter(X_test, y_test)
 
         y_pred = self.best_model(X_test).argmax(axis=1)
-        correct = (y_pred == y_test.squeeze())
-        accuracy = correct.sum() / len(correct)
+        y_true = y_test.squeeze()
 
-        self.test_results = pd.DataFrame({"y_test": y_test.squeeze(),
+        self.test_results = pd.DataFrame({"y_test": y_true,
                                           "y_pred": y_pred})
-        self.confusion_matrix = confusion_matrix(y_test, y_pred)
-        self.accuracy = np.round(accuracy.data.item(), 3)
-        self.precision = np.round(
-            np.diag(self.confusion_matrix) / np.sum(self.confusion_matrix, axis=0), 3)
-        self.recall = np.round(
-            np.diag(self.confusion_matrix) / np.sum(self.confusion_matrix, axis=1), 3)
-        self.f1 = np.round(
-            2 * (self.precision * self.recall) / (self.precision + self.recall), 3)
-
-        return self.accuracy
+        self.confusion_matrix = confusion_matrix(y_true, y_pred)
+        self.accuracy = accuracy_score(y_true, y_pred)
+        self.precision = precision_score(y_true, y_pred, average="weighted")
+        self.recall = recall_score(y_true, y_pred, average="weighted")
+        self.f1 = f1_score(y_true, y_pred, average="weighted")
 
     def assign_unknown(self):
         
@@ -174,7 +167,7 @@ class PopClassifier(object):
 
         true_labels = self.test_results["y_test"]
         pred_labels = self.test_results["y_pred"]
-        
+
         cm = confusion_matrix(true_labels, pred_labels, normalize="true")
         cm = np.round(cm, 2)
         plt.style.use("default")

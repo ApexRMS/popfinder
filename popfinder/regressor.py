@@ -2,7 +2,7 @@ import torch
 from torch.autograd import Variable
 from scipy import spatial
 from scipy import stats
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import matplotlib
@@ -177,18 +177,25 @@ class PopRegressor(object):
         test_locs = self.test_locs_final
         pred_locs = self.pred_locs_final
 
-        self.test_report = self._test_classification(test_locs,
+        self.classification_test_results = self._test_classification(test_locs,
             num_contours, save_plots)
         self.contour_classification = self._classify_unknowns(test_locs,
             pred_locs, num_contours, save_plots)
 
         if save_data:
-            self.test_report.to_csv(os.path.join(self.output_folder,
+            self.classification_test_results.to_csv(os.path.join(self.output_folder,
                 "contour_classification_test_report.csv"), index=False)
             self.contour_classification.to_csv(os.path.join(self.output_folder,
                 "contour_classification_results.csv"), index=False)
 
         # Generate classification summary stats from test_report
+        y_pred = self.classification_test_results["pred_pop"]
+        y_true = self.classification_test_results["true_pop"]
+        self.classification_confusion_matrix = confusion_matrix(y_true, y_pred)
+        self.classification_accuracy = accuracy_score(y_true, y_pred)
+        self.classification_precision = precision_score(y_true, y_pred, average="weighted")
+        self.classification_recall = recall_score(y_true, y_pred, average="weighted")
+        self.classification_f1 = f1_score(y_true, y_pred, average="weighted")
 
     # Reporting functions below
     def get_assignment_summary(self):
@@ -205,11 +212,11 @@ class PopRegressor(object):
     def get_classification_summary(self):
 
         summary = { # need to grab all these items
-            "accuracy": [self.accuracy],
-            "precision": [self.precision],
-            "recall": [self.recall],
-            "f1": [self.f1],
-            "confusion_matrix": [self.confusion_matrix]
+            "accuracy": [self.classification_accuracy],
+            "precision": [self.classification_precision],
+            "recall": [self.classification_recall],
+            "f1": [self.classification_f1],
+            "confusion_matrix": [self.classification_confusion_matrix]
         }
 
         return summary
@@ -240,12 +247,15 @@ class PopRegressor(object):
     def plot_contour_map():
         pass
 
-    def plot_confusion_matrix(self, true_labels, pred_labels, save=True):
+    def plot_confusion_matrix(self, save=True):
         """
         Plots confusion matrix. This functions uses the true and predicted
         labels generated from the test data to give a visual representation
         of the accuracy of the model.
         """
+        true_labels = self.classification_test_results["true_pop"]
+        pred_labels = self.classification_test_results["pred_pop"]
+
         cm = confusion_matrix(true_labels, pred_labels, normalize="true")
         cm = np.round(cm, 2)
         plt.style.use("default")
