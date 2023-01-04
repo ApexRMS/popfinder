@@ -4,14 +4,14 @@ from scipy import spatial
 from scipy import stats
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
+import matplotlib.image as mpimg
 import matplotlib
 import seaborn as sns
 import numpy as np
 import pandas as pd
 import os
 
-from popfinder.preprocess import GeneticData
+from popfinder.dataloader import GeneticData
 from popfinder._neural_networks import RegressorNet
 from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
@@ -36,6 +36,7 @@ class PopRegressor(object):
         self.output_folder = output_folder
         self.train_history = None
         self.best_model = None
+        self.regression = None
         self.median_distance = None
         self.mean_distance = None
         self.r2_lat = None
@@ -202,8 +203,12 @@ class PopRegressor(object):
 
     def plot_location(self, sampleID=None, save=True):
         
+        if self.regression is None:
+            raise Exception("No regression data available. Please run" + 
+                " assign_unknown() first.")
+
         if sampleID is None:
-            sample_list = self.regression.sampleID.unique()
+            sample_list = self.data.unknowns.sampleID.unique()
         else:
             sample_list = [sampleID]
 
@@ -227,16 +232,35 @@ class PopRegressor(object):
 
             sample_data = pd.concat([sample_data, pred_sample_df, pop_sample_df], axis=0)
 
+        # TODO: Create custom colour palette to highlight pred
         g = sns.FacetGrid(sample_data, hue="pop", col="sampleID",
-            col_wrap=3, height=3) # Create custom colour palette to highlight pred
+            col_wrap=3, height=3) 
         g.map(plt.scatter, "x", "y", s=50)
         g.add_legend()
 
         if save:
             plt.savefig(os.path.join(self.output_folder, "location_plot.png"))
 
+
     def plot_contour_map(self, sampleID=None):
-        pass
+        """
+        Plots contour map for a given sampleID. If no sampleID is provided,
+        all samples of unknown origin will be plotted.
+        """
+        if self.contour_classification is None:
+            raise ValueError("Classification results not available. Please run " +
+                "classify_by_contours() before plotting contour maps.")
+
+        if sampleID is None:
+            sample_list = self.data.unknowns.sampleID.unique()
+        else:
+            sample_list = [sampleID]
+
+        for sample in sample_list:    
+            image = mpimg.imread(os.path.join(self.output_folder,
+                                "contour_" + sample + ".png"))
+            plt.imshow(image)
+        
 
     def plot_confusion_matrix(self, save=True):
         """
@@ -249,7 +273,8 @@ class PopRegressor(object):
             self._nn_type, self.output_folder, save)
 
     def plot_roc_curve():
-        pass # add later
+        pass # TODO: add later
+
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 
@@ -260,6 +285,7 @@ class PopRegressor(object):
 
         _plot_assignment(e_preds, col_scheme, self.output_folder,
             self._nn_type, save)
+
 
     def plot_structure(self, save=True, col_scheme="Spectral"):
         """
@@ -274,6 +300,7 @@ class PopRegressor(object):
 
         _plot_structure(preds, col_scheme, self._nn_type, 
             self.output_folder, save)
+
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
@@ -314,6 +341,7 @@ class PopRegressor(object):
             loss_dict["valid"].append(avg_valid_loss)
 
         return pd.DataFrame(loss_dict)
+
 
     def _euclidean_dist_loss(self, y_pred, y_true):
 
@@ -513,4 +541,3 @@ class PopRegressor(object):
         plt.close()
 
         return cset
-        

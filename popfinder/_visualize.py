@@ -23,8 +23,6 @@ def _plot_training_curve(train_history, nn_type, output_folder, save):
         fig.savefig(os.path.join(output_folder, nn_type + "_training_history.png"),
             bbox_inches="tight")
 
-    plt.close()
-
 def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
     output_folder, save):
 
@@ -49,8 +47,6 @@ def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
 
     if save:
         plt.savefig(os.path.join(output_folder, nn_type + "_confusion_matrix.png"))
-
-    plt.close()
 
 def _plot_assignment(e_preds, col_scheme, output_folder,
     nn_type, save):
@@ -86,8 +82,6 @@ def _plot_assignment(e_preds, col_scheme, output_folder,
         plt.savefig(os.path.join(
             output_folder, nn_type + "_assignment_plot.png"),
             bbox_inches="tight")
-
-    plt.close()
 
 def _plot_structure(preds, col_scheme, nn_type, output_folder, save):
 
