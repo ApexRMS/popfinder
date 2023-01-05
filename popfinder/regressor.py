@@ -241,6 +241,8 @@ class PopRegressor(object):
         if save:
             plt.savefig(os.path.join(self.output_folder, "location_plot.png"))
 
+        plt.close()
+
 
     def plot_contour_map(self, sampleID=None):
         """
@@ -256,10 +258,41 @@ class PopRegressor(object):
         else:
             sample_list = [sampleID]
 
+        image_list = []
+
         for sample in sample_list:    
             image = mpimg.imread(os.path.join(self.output_folder,
                                 "contour_" + sample + ".png"))
-            plt.imshow(image)
+            image_list.append(image)
+
+        cols = min(3, len(sample_list))
+        rows = int(np.ceil(len(image_list) / cols))
+        fig, axs = plt.subplots(rows, cols)
+        plt.subplots_adjust(wspace=0.00, hspace=0.00)
+
+        if (rows == 1 & cols == 1):
+            axs.spines['top'].set_visible(False)
+            axs.spines['right'].set_visible(False)
+            axs.spines['bottom'].set_visible(False)
+            axs.spines['left'].set_visible(False)
+            axs.get_xaxis().set_ticks([])
+            axs.get_yaxis().set_ticks([])
+            axs.imshow(image_list[0])
+        else:
+            for i, ax in enumerate(axs.flat):
+                if i < len(image_list):
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+                    ax.spines['bottom'].set_visible(False)
+                    ax.spines['left'].set_visible(False)
+                    ax.get_xaxis().set_ticks([])
+                    ax.get_yaxis().set_ticks([])
+                    ax.imshow(image_list[i])
+                else:
+                    ax.axis("off")
+
+        plt.show()
+        plt.close()
         
 
     def plot_confusion_matrix(self, save=True):
@@ -515,6 +548,7 @@ class PopRegressor(object):
                        sample, save):
 
         # Plot
+        plt.ioff()
         fig = plt.figure(figsize=(8, 8))
         ax = fig.gca()
         plt.xlim(xlim[0], xlim[1])
