@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
+import pickle
 import numpy as np
 import pandas as pd
 import os
@@ -12,6 +11,7 @@ from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
 from popfinder._helper import _data_converter
 from popfinder._helper import _split_input_classifier
+from popfinder._helper import _save, _load
 from popfinder._visualize import _plot_assignment
 from popfinder._visualize import _plot_training_curve
 from popfinder._visualize import _plot_confusion_matrix
@@ -194,3 +194,15 @@ class PopClassifier(object):
 
         _plot_structure(preds, col_scheme, self._nn_type, 
             self.output_folder, save)
+
+    def save(self, save_path=None):
+        """
+        Saves the current instance of the class to a pickle file.
+        """
+        _save(self, save_path)
+
+    def load(self, load_path=None):
+        """
+        Loads a saved instance of the class from a pickle file.
+        """
+        _save(self, load_path)

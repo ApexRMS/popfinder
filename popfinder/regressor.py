@@ -6,6 +6,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precisio
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib
+import pickle
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -17,6 +18,7 @@ from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
 from popfinder._helper import _data_converter
 from popfinder._helper import _split_input_regressor
+from popfinder._helper import _save, _load
 from popfinder._visualize import _plot_assignment
 from popfinder._visualize import _plot_training_curve
 from popfinder._visualize import _plot_confusion_matrix
@@ -99,6 +101,7 @@ class PopRegressor(object):
         X_test = test_input["alleles"]    
         y_test = test_input[["x", "y"]]
         X_test, y_test = _data_converter(X_test, y_test)
+        y_test = self._unnormalize_locations(y_test)
 
         y_pred = self.best_model(X_test).detach().numpy()
         y_pred = self._unnormalize_locations(y_pred)
@@ -111,7 +114,7 @@ class PopRegressor(object):
             ) for x in range(len(y_pred))
         ]
 
-        self.median_distance = np.median(dists) # won't be accurate, need to unnormalize
+        self.median_distance = np.median(dists)
         self.mean_distance = np.mean(dists)
         self.r2_long = np.corrcoef(y_pred[:, 0], y_test[:, 0])[0][1] ** 2
         self.r2_lat = np.corrcoef(y_pred[:, 1], y_test[:, 1])[0][1] ** 2
@@ -334,6 +337,17 @@ class PopRegressor(object):
         _plot_structure(preds, col_scheme, self._nn_type, 
             self.output_folder, save)
 
+    def save(self, save_path=None):
+        """
+        Saves the current instance of the class to a pickle file.
+        """
+        _save(self, save_path)
+
+    def load(self, load_path=None):
+        """
+        Loads a saved instance of the class from a pickle file.
+        """
+        _save(self, load_path)
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
