@@ -308,9 +308,6 @@ class PopRegressor(object):
             self.classification_confusion_matrix,
             self._nn_type, self.output_folder, save)
 
-    def plot_roc_curve():
-        pass # TODO: add later
-
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 

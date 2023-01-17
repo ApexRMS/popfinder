@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
-import pickle
+from sklearn.preprocessing import OneHotEncoder
 import numpy as np
 import pandas as pd
 import os
@@ -157,6 +157,39 @@ class PopClassifier(object):
 
         return summary
 
+    def rank_site_importance(self):
+        """
+        Rank sites (SNPs) by importance in model performance.
+        """
+        if self.best_model is None:
+            raise ValueError("Model has not been trained yet. " + 
+            "Please run the train() method first.")
+
+        X = self.data.knowns["alleles"]
+        Y = self.data.knowns["pop"]
+        enc = OneHotEncoder(handle_unknown="ignore")
+        Y_enc = enc.fit_transform(Y.values.reshape(-1, 1)).toarray()
+
+        snp_names = np.arange(1, X.shape[1] + 1)
+
+        errors = []
+
+        for i in range(X.shape[1]):
+            X_temp = X.copy()
+            X_temp.loc[:, i] = np.random.choice(X_temp.loc[:, i], X_temp.shape[0])
+            X_temp = enc.fit_transform(X_temp).toarray()
+            preds = self.best_model(X_temp).argmax(axis=1)
+            errors.append(np.sum(preds != Y_enc.argmax(axis=1)) / len(Y))
+
+        max_error = np.max(errors)
+        importance = [1 - (e / max_error) for e in errors]
+        importance_data = {"snp": snp_names, "error": errors,
+                           "importance": importance}
+        ranking = pd.DataFrame(importance_data).sort_values("importance",
+                                                            ascending=False)
+
+        return ranking
+
     # Plotting functions below
     def plot_training_curve(self, save=True):
 
@@ -167,10 +200,6 @@ class PopClassifier(object):
 
         _plot_confusion_matrix(self.test_results, self.confusion_matrix,
             self._nn_type, self.output_folder, save)
-
-    def plot_roc_curve():
-
-        pass # add later
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
 
