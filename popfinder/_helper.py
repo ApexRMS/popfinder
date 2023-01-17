@@ -4,6 +4,7 @@ from torch.autograd import Variable
 from sklearn import preprocessing
 import numpy as np
 import pickle
+import os
 
 def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123):
 
@@ -78,20 +79,20 @@ def _data_converter(x, y, variable=False):
     else:
         return features
 
-def save(obj, save_path=None):
+def _save(obj, save_path=None, file="model.pkl"):
     """
     Saves the current instance of the class to a pickle file.
     """
     if save_path is None:
         save_path = obj.output_folder
-    with open(save_path, "wb") as f:
+    with open(os.path.join(save_path, file), "wb") as f:
         pickle.dump(obj, f)
 
-def load(obj, load_path=None):
+def _load(obj, load_path=None, file="model.pkl"):
     """
     Loads a saved instance of the class from a pickle file.
     """
     if load_path is None:
         load_path = obj.output_folder
-    with open(load_path, "rb") as f:
+    with open(os.path.join(load_path, file), "rb") as f:
         return pickle.load(f)

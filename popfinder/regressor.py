@@ -337,17 +337,17 @@ class PopRegressor(object):
         _plot_structure(preds, col_scheme, self._nn_type, 
             self.output_folder, save)
 
-    def save(self, save_path=None):
+    def save(self, save_path=None, filename="regressor.pkl"):
         """
         Saves the current instance of the class to a pickle file.
         """
-        _save(self, save_path)
+        _save(self, save_path, filename)
 
-    def load(self, load_path=None):
+    def load(self, load_path=None, filename="regressor.pkl"):
         """
         Loads a saved instance of the class from a pickle file.
         """
-        _save(self, load_path)
+        _save(self, load_path, filename)
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
