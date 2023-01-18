@@ -27,6 +27,83 @@ from popfinder._visualize import _plot_structure
 class PopRegressor(object):
     """
     A class to represent a regressor neural network object for population assignment.
+
+    Parameters
+    ----------
+    data : GeneticData object
+        GeneticData object containing the training data.
+    nboots : int, optional
+        Number of bootstrap samples to generate. The default is 20.
+    random_state : int, optional
+        Random seed for reproducibility. The default is 123.
+    output_folder : str, optional
+        Path to output folder. The default is None.
+    
+    Attributes
+    ----------
+    data : GeneticData object
+        GeneticData object containing the training data.
+    nboots : int
+        Number of bootstrap samples to generate.
+    random_state : int
+        Random seed for reproducibility.
+    output_folder : str
+        Path to output folder.
+    train_history : list
+        List of training history objects.
+    best_model : torch.nn.Module
+        Best model from training.
+    regression : pandas.DataFrame
+        Dataframe containing the regression results.
+    median_distance : float
+        Median distance between true and predicted coordinates.
+    mean_distance : float
+        Mean distance between true and predicted coordinates.
+    r2_lat : float
+        R-squared value for latitude.
+    r2_long : float
+        R-squared value for longitude.
+    summary : pandas.DataFrame
+        Dataframe containing the summary of the regression results.
+    contour_classification : pandas.DataFrame
+        Dataframe containing the contour classification results.
+    classification_test_results : pandas.DataFrame
+        Dataframe containing the classification test results.
+    classification_accuracy : float
+        Classification accuracy.
+    classification_precision : float
+        Classification precision.
+    classification_recall : float
+        Classification recall.
+    classification_f1 : float
+        Classification F1 score.
+    classification_confusion_matrix : numpy.ndarray
+        Classification confusion matrix.
+
+    Methods
+    -------
+    train(epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None)
+        Train the regressor.
+    test()
+        Test the regressor.
+    assign_unknown()
+        Assign unknown samples.
+    rank_site_importance()
+        Rank the importance of each site.
+    plot_training_curve()
+        Plot the training curve.
+    plot_location()
+        Plot the predicted and true locations.  
+    plot_contour_map()
+        Plot the contour map.
+    plot_confusion_matrix()
+        Plot the confusion matrix.
+    plot_structure()
+        Plot the neural network structure.  
+    save()
+        Save the regressor object.
+    load()
+        Load the regressor object.  
     """
     def __init__(self, data, nboots=20, random_state=123, output_folder=None):
 
@@ -56,7 +133,33 @@ class PopRegressor(object):
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None):
+        """
+        Trains the regression neural network to estimate xy coordinates of 
+        a sample's origin.
         
+        Parameters
+        ----------
+        epochs : int, optional
+            Number of epochs to train the neural network. The default is 100.
+        valid_size : float, optional
+            Proportion of data to use for validation. The default is 0.2.
+        cv_splits : int, optional
+            Number of cross-validation splits. The default is 1.
+        cv_reps : int, optional
+            Number of cross-validation repetitions. The default is 1.
+        learning_rate : float, optional
+            Learning rate for the neural network. The default is 0.001.
+        batch_size : int, optional
+            Batch size for the neural network. The default is 16.
+        dropout_prop : float, optional
+            Dropout proportion for the neural network. The default is 0.
+        boot_data : GeneticData, optional
+            GeneticData object to use for bootstrapping. The default is None.
+            
+        Returns
+        -------
+        None.
+        """
         if boot_data is None:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                             cv_reps, seed=self.random_state)
@@ -94,6 +197,20 @@ class PopRegressor(object):
         self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
     def test(self, boot_data=None, verbose=False):
+        """
+        Tests the regression neural network on the test data.
+        
+        Parameters
+        ----------
+        boot_data : GeneticData, optional
+            GeneticData object to use for bootstrapping. The default is None.
+        verbose : bool, optional
+            Whether to print the test results. The default is False.
+
+        Returns
+        -------
+        None.
+        """
         
         if boot_data is None:
             test_input = self.data.test
@@ -128,7 +245,21 @@ class PopRegressor(object):
 
         return test_input
 
-    def assign_unknown(self, boot_data=None):
+    def assign_unknown(self, save=True, boot_data=None):
+        """
+        Assigns unknown samples to their predicted origin.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the results to a csv file. The default is True.
+        boot_data : GeneticData, optional
+            GeneticData object to use for bootstrapping. The default is None.
+        
+        Returns
+        -------
+        None.
+        """
         
         if boot_data is None:
             unknown_data = self.data.unknowns
@@ -145,11 +276,35 @@ class PopRegressor(object):
 
         self.regression = unknown_data
 
+        if save:
+            unknown_data.to_csv(os.path.join(self.output_folder,
+                                "regressor_assignment_results.csv"))
+
         return unknown_data
 
     def classify_by_contours(self, nboots=5, num_contours=5,
-        save_plots=True, save_data=True):
+        save_plots=True, save=True):
+        """
+        Classifies unknown samples by kernel density estimates (contours).
+        This function uses 2D kernel density estimation to create contour 
+        plots from many predictions on the same sample, then assigns the sample
+        to the contour with the highest probability.
 
+        Parameters
+        ----------
+        nboots : int, optional
+            Number of bootstraps to perform. The default is 5.
+        num_contours : int, optional
+            Number of contours to generate. The default is 5.
+        save_plots : bool, optional
+            Whether to save the contour plots. The default is True.
+        save : bool, optional
+            Whether to save the classification results. The default is True.
+        
+        Returns
+        -------
+        None.
+        """
         self._generate_bootstraps(nboots=nboots) # also add option for multiple reps
 
         test_locs = self.test_locs_final
@@ -160,7 +315,7 @@ class PopRegressor(object):
         self.contour_classification = self._classify_unknowns(pred_locs,
             test_locs, num_contours, save_plots)
 
-        if save_data:
+        if save:
             self.classification_test_results.to_csv(os.path.join(self.output_folder,
                 "contour_classification_test_report.csv"), index=False)
             self.contour_classification.to_csv(os.path.join(self.output_folder,
@@ -177,8 +332,21 @@ class PopRegressor(object):
         self.classification_f1 = f1_score(y_true, y_pred, average="weighted")
 
     # Reporting functions below
-    def get_assignment_summary(self):
-
+    def get_assignment_summary(self, save=True):
+        """
+        Returns a summary of the assignment results.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the summary to a csv file. The default is True.
+            
+        Returns
+        -------
+        dict
+            Dictionary containing the summary statistics median distance,
+            mean distance, r2_long, r2_lat.
+        """
         summary = {
             "median_distance": [self.median_distance],
             "mean_distance": [self.mean_distance],
@@ -186,10 +354,27 @@ class PopRegressor(object):
             "r2_lat": [self.r2_lat]
         }
 
+        if save:
+            pd.DataFrame(summary).to_csv(os.path.join(self.output_folder,
+                "regressor_assignment_summary.csv"), index=False)
+
         return summary
 
-    def get_classification_summary(self):
-
+    def get_classification_summary(self, save=True):
+        """
+        Returns a summary of the classification results.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the summary to a csv file. The default is True.
+        
+        Returns
+        -------
+        dict
+            Dictionary containing the summary statistics accuracy, precision,
+            recall, f1, and confusion matrix.
+        """
         summary = { # need to grab all these items
             "accuracy": [self.classification_accuracy],
             "precision": [self.classification_precision],
@@ -197,12 +382,26 @@ class PopRegressor(object):
             "f1": [self.classification_f1],
             "confusion_matrix": [self.classification_confusion_matrix]
         }
+        
+        if save:
+            pd.DataFrame(summary).to_csv(os.path.join(self.output_folder,
+                "regressor_classification_summary.csv"), index=False)
 
         return summary
 
-    def rank_site_importance(self):
+    def rank_site_importance(self, save=True):
         """
         Rank sites (SNPs) by importance in model performance.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the results to a csv file. The default is True.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            Dataframe containing the ranked SNPs and their importance scores.
         """
         if self.best_model is None:
             raise ValueError("Model has not been trained yet. " + 
@@ -229,16 +428,47 @@ class PopRegressor(object):
         ranking = pd.DataFrame(importance_data).sort_values("importance",
                                                             ascending=False)
 
+        if save:
+            ranking.to_csv(os.path.join(self.output_folder,
+                "regressor_site_importance.csv"), index=False)
+
         return ranking
 
     # Plotting functions below
     def plot_training_curve(self, save=True):
+        """
+        Plot the training curve of the model.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+            
+        Returns
+        -------
+        None.
+        """
 
         _plot_training_curve(self.train_history, self._nn_type,
             self.output_folder, save)
 
     def plot_location(self, sampleID=None, save=True):
+        """
+        Plot the predicted location of a sample of unknown origin
+        compared to known locations of populations.
         
+        Parameters
+        ----------
+        sampleID : str, optional
+            The sampleID to plot. If None, all samples will be plotted.
+            The default is None.
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+            
+        Returns
+        -------
+        None.
+        """
         if self.regression is None:
             raise Exception("No regression data available. Please run" + 
                 " assign_unknown() first.")
@@ -284,6 +514,16 @@ class PopRegressor(object):
         """
         Plots contour map for a given sampleID. If no sampleID is provided,
         all samples of unknown origin will be plotted.
+
+        Parameters
+        ----------
+        sampleID : str, optional
+            The sampleID to plot. If None, all samples will be plotted.
+            The default is None.
+        
+        Returns
+        -------
+        None.
         """
         if self.contour_classification is None:
             raise ValueError("Classification results not available. Please run " +
@@ -336,6 +576,15 @@ class PopRegressor(object):
         Plots confusion matrix. This functions uses the true and predicted
         labels generated from the test data to give a visual representation
         of the accuracy of the model.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+        
+        Returns
+        -------
+        None.
         """
         _plot_confusion_matrix(self.classification_test_results,
             self.classification_confusion_matrix,
@@ -343,7 +592,21 @@ class PopRegressor(object):
 
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
+        """
+        Plots the proportion of times each individual from the
+        unknown data was assigned to each population.
 
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+        col_scheme : str, optional
+            The colour scheme to use for the plot. The default is "Spectral".
+
+        Returns
+        -------
+        None
+        """
         if self.contour_classification is None:
             raise ValueError("No classification results to plot.")
 
@@ -358,6 +621,17 @@ class PopRegressor(object):
         Plots the proportion of times individuals from the
         test data were assigned to the correct population. 
         Used for determining the accuracy of the classifier.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+        col_scheme : str, optional
+            The colour scheme to use for the plot. The default is "Spectral".
+        
+        Returns
+        -------
+        None
         """
         classes = np.unique(self.classification_test_results["true_pop"])
         preds = pd.DataFrame(self.classification_confusion_matrix,
@@ -370,12 +644,36 @@ class PopRegressor(object):
     def save(self, save_path=None, filename="regressor.pkl"):
         """
         Saves the current instance of the class to a pickle file.
+
+        Parameters
+        ----------
+        save_path : str, optional
+            The path to save the file to. If None, the file will be saved
+            to the current working directory. The default is None.
+        filename : str, optional
+            The name of the file to save. The default is "regressor.pkl".
+
+        Returns
+        -------
+        None.
         """
         _save(self, save_path, filename)
 
     def load(self, load_path=None, filename="regressor.pkl"):
         """
         Loads a saved instance of the class from a pickle file.
+
+        Parameters
+        ----------
+        load_path : str, optional
+            The path to load the file from. If None, the file will be loaded
+            from the current working directory. The default is None.
+        filename : str, optional
+            The name of the file to load. The default is "regressor.pkl".
+
+        Returns
+        -------
+        None.
         """
         _load(self, load_path, filename)
 

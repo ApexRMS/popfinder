@@ -45,6 +45,30 @@ class PopClassifier(object):
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0):
+        """
+        Trains the classification neural network.
+
+        Parameters
+        ----------
+        epochs : int, optional
+            Number of epochs to train the neural network. The default is 100.
+        valid_size : float, optional
+            Proportion of data to use for validation. The default is 0.2.
+        cv_splits : int, optional
+            Number of cross-validation splits. The default is 1.
+        cv_reps : int, optional
+            Number of cross-validation repetitions. The default is 1.
+        learning_rate : float, optional
+            Learning rate for the neural network. The default is 0.001.
+        batch_size : int, optional
+            Batch size for the neural network. The default is 16.
+        dropout_prop : float, optional
+            Dropout proportion for the neural network. The default is 0.
+        
+        Returns
+        -------
+        None.
+        """
 
         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
@@ -104,6 +128,13 @@ class PopClassifier(object):
         self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
     def test(self):
+        """
+        Tests the classification neural network.
+        
+        Returns
+        -------
+        None.
+        """
         
         test_input = self.data.test
 
@@ -132,7 +163,20 @@ class PopClassifier(object):
         self.recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
         self.f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
 
-    def assign_unknown(self):
+    def assign_unknown(self, save=True):
+        """
+        Assigns unknown samples to populations using the trained neural network.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the results to a csv file. The default is True.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame containing the unknown samples and their assigned populations.
+        """
         
         unknown_data = self.data.unknowns
 
@@ -144,11 +188,29 @@ class PopClassifier(object):
         unknown_data.loc[:, "assigned_pop"] = preds
 
         self.classification = unknown_data
+
+        if save:
+            unknown_data.to_csv(os.path.join(self.output_folder,
+                                "classifier_assignment_results.csv"),
+                                index=False)
         
         return unknown_data
   
     # Reporting functions below
-    def get_classification_summary(self):
+    def get_classification_summary(self, save=True):
+        """
+        Get a summary of the classification results.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the results to a csv file. The default is True.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame containing the classification summary.
+        """
 
         summary = {
             "accuracy": [self.accuracy],
@@ -158,11 +220,27 @@ class PopClassifier(object):
             "confusion_matrix": [self.confusion_matrix]
         }
 
+        if save:
+            summary = pd.DataFrame(summary)
+            summary.to_csv(os.path.join(self.output_folder,
+                          "classifier_classification_summary.csv"),
+                           index=False)
+
         return summary
 
-    def rank_site_importance(self):
+    def rank_site_importance(self, save=True):
         """
         Rank sites (SNPs) by importance in model performance.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the results to a csv file. The default is True.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame containing the ranked sites.
         """
         if self.best_model is None:
             raise ValueError("Model has not been trained yet. " + 
@@ -190,20 +268,64 @@ class PopClassifier(object):
         ranking = pd.DataFrame(importance_data).sort_values("importance",
                                                             ascending=False)
 
+        if save:
+            ranking.to_csv(os.path.join(self.output_folder,
+                          "classifier_site_importance_ranking.csv"),
+                           index=False)
+
         return ranking
 
     # Plotting functions below
     def plot_training_curve(self, save=True):
+        """
+        Plots the training curve.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+            
+        Returns
+        -------
+        None
+        """
 
         _plot_training_curve(self.train_history, self._nn_type,
             self.output_folder, save)
 
     def plot_confusion_matrix(self, save=True):
+        """
+        Plots the confusion matrix.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+        
+        Returns
+        -------
+        None
+        """
 
         _plot_confusion_matrix(self.test_results, self.confusion_matrix,
             self._nn_type, self.output_folder, save)
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
+        """
+        Plots the proportion of times each individual from the
+        unknown data was assigned to each population.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+        col_scheme : str, optional
+            The colour scheme to use for the plot. The default is "Spectral".
+
+        Returns
+        -------
+        None
+        """
 
         if self.classification is None:
             raise ValueError("No classification results to plot.")
@@ -218,6 +340,17 @@ class PopClassifier(object):
         Plots the proportion of times individuals from the
         test data were assigned to the correct population. 
         Used for determining the accuracy of the classifier.
+
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the plot to a png file. The default is True.
+        col_scheme : str, optional
+            The colour scheme to use for the plot. The default is "Spectral".
+        
+        Returns
+        -------
+        None
         """
         preds = pd.DataFrame(self.confusion_matrix,
                              columns=self.label_enc.classes_,
@@ -229,11 +362,33 @@ class PopClassifier(object):
     def save(self, save_path=None, filename="classifier.pkl"):
         """
         Saves the current instance of the class to a pickle file.
+
+        Parameters
+        ----------
+        save_path : str, optional
+            The path to save the file to. The default is None.
+        filename : str, optional
+            The name of the file to save. The default is "classifier.pkl".
+
+        Returns
+        -------
+        None
         """
         _save(self, save_path, filename)
 
     def load(self, load_path=None, filename="classifier.pkl"):
         """
         Loads a saved instance of the class from a pickle file.
+
+        Parameters
+        ----------
+        load_path : str, optional
+            The path to load the file from. The default is None.
+        filename : str, optional
+            The name of the file to load. The default is "classifier.pkl".
+        
+        Returns
+        -------
+        None
         """
         _load(self, load_path, filename)

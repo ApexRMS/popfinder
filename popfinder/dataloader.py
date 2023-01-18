@@ -9,6 +9,52 @@ import os
 from sklearn.model_selection import RepeatedStratifiedKFold, train_test_split
 
 class GeneticData():
+    """
+    Class for reading in genetic data and sample data and compiling
+    information into a pandas DataFrame for either a classifier or
+    regressor neural network.
+
+    Parameters
+    ----------
+    genetic_data : str
+        Path to genetic data file. Can be .zarr, .vcf, or .h5py.
+    sample_data : str
+        Path to sample data file. Must be .tsv or .csv.
+    test_size : float
+        Proportion of data to be used for testing.
+    seed : int
+        Seed for random number generator.
+    
+    Attributes
+    ----------
+    genetic_data : str
+        Path to genetic data file. Can be .zarr, .vcf, or .h5py.
+    sample_data : str
+        Path to sample data file. Must be .tsv or .csv.
+    seed : int
+        Seed for random number generator.
+    meanlong : float
+        Mean longitude of sample data.
+    meanlat : float
+        Mean latitude of sample data.
+    stdlon : float
+        Standard deviation of longitude of sample data.
+    stdlat : float
+        Standard deviation of latitude of sample data.
+    
+    Methods
+    -------
+    read_data()
+        Reads a .zarr, .vcf, or h5py file containing genetic data and
+        compiles information into a pandas DataFrame for either a
+        classifier or regressor neural network.
+    split_train_test(data, test_size, seed)
+        Splits data into training and testing sets.
+    split_kfcv(data, n_splits, n_reps, seed)
+        Splits data into k-fold cross validation sets.
+    split_unknowns(data)
+        Splits data into known and unknown samples.
+    """
     def __init__(self, genetic_data=None, sample_data=None, test_size=0.2, seed=123):
 
         self.genetic_data = genetic_data
