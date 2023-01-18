@@ -198,6 +198,37 @@ class PopRegressor(object):
 
         return summary
 
+    def rank_site_importance(self):
+        """
+        Rank sites (SNPs) by importance in model performance.
+        """
+        if self.best_model is None:
+            raise ValueError("Model has not been trained yet. " + 
+            "Please run the train() method first.")
+
+        X = self.data.knowns["alleles"].to_numpy()
+        X = np.stack(X)
+        Y = self.data.knowns[["x", "y"]].to_numpy()
+        snp_names = np.arange(1, X.shape[1] + 1)
+        errors = []
+
+        for i in range(X.shape[1]):
+            X_temp = X.copy()
+            X_temp[:, i] = np.random.choice(X_temp[:, i], X_temp.shape[0])
+            X_temp = torch.from_numpy(X_temp).float()
+            preds = self.best_model(X_temp).detach().numpy()
+            preds = self._unnormalize_locations(preds)
+            errors.append(spatial.distance.cdist(preds, Y).mean())
+       
+        max_error = np.max(errors)
+        importance = [1 - (e / max_error) for e in errors]
+        importance_data = {"snp": snp_names, "error": errors,
+                           "importance": importance}
+        ranking = pd.DataFrame(importance_data).sort_values("importance",
+                                                            ascending=False)
+
+        return ranking
+
     # Plotting functions below
     def plot_training_curve(self, save=True):
 

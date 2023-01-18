@@ -165,19 +165,18 @@ class PopClassifier(object):
             raise ValueError("Model has not been trained yet. " + 
             "Please run the train() method first.")
 
-        X = self.data.knowns["alleles"]
+        X = self.data.knowns["alleles"].to_numpy()
+        X = np.stack(X)
         Y = self.data.knowns["pop"]
         enc = OneHotEncoder(handle_unknown="ignore")
         Y_enc = enc.fit_transform(Y.values.reshape(-1, 1)).toarray()
-
         snp_names = np.arange(1, X.shape[1] + 1)
-
         errors = []
 
         for i in range(X.shape[1]):
             X_temp = X.copy()
-            X_temp.loc[:, i] = np.random.choice(X_temp.loc[:, i], X_temp.shape[0])
-            X_temp = enc.fit_transform(X_temp).toarray()
+            X_temp[:, i] = np.random.choice(X_temp[:, i], X_temp.shape[0])
+            X_temp = torch.from_numpy(X_temp).float()
             preds = self.best_model(X_temp).argmax(axis=1)
             errors.append(np.sum(preds != Y_enc.argmax(axis=1)) / len(Y))
 
