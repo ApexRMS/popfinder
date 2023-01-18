@@ -54,7 +54,8 @@ class PopRegressor(object):
 
         self._nn_type = "regressor"
 
-    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, boot_data=None):
+    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
+              learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None):
         
         if boot_data is None:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
@@ -70,8 +71,9 @@ class PopRegressor(object):
         for i, input in enumerate(inputs):
 
             X_train, y_train, X_valid, y_valid = _split_input_regressor(input)
-            net = RegressorNet(X_train.shape[1], 16, len(y_train.unique()))
-            optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
+            net = RegressorNet(input_size=X_train.shape[1], hidden_size=16,
+                               batch_size=batch_size, dropout_prop=dropout_prop)
+            optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
             loss_func = self._euclidean_dist_loss
 
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,

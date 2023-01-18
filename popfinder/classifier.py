@@ -43,7 +43,8 @@ class PopClassifier(object):
 
         self._nn_type = "classifier"
 
-    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1):
+    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
+              learning_rate=0.001, batch_size=16, dropout_prop=0):
 
         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
@@ -56,8 +57,10 @@ class PopClassifier(object):
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
 
-            net = ClassifierNet(X_train.shape[1], 16, len(y_train.unique()))
-            optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
+            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16,
+                                output_size=len(y_train.unique()),
+                                batch_size=batch_size, dropout_prop=dropout_prop)
+            optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
             loss_func = nn.CrossEntropyLoss()
 
             for epoch in range(epochs):
