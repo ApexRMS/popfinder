@@ -377,7 +377,7 @@ class PopRegressor(object):
         """
         Loads a saved instance of the class from a pickle file.
         """
-        _save(self, load_path, filename)
+        _load(self, load_path, filename)
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 

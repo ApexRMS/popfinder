@@ -4,7 +4,8 @@ import torch
 
 class ClassifierNet(nn.Module):
     
-    def __init__(self, input_size, hidden_size, output_size, batch_size, dropout_prop):
+    def __init__(self, input_size, hidden_size, output_size,
+                 batch_size, dropout_prop):
         super(ClassifierNet, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size

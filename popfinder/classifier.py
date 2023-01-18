@@ -236,4 +236,4 @@ class PopClassifier(object):
         """
         Loads a saved instance of the class from a pickle file.
         """
-        _save(self, load_path, filename)
+        _load(self, load_path, filename)
