@@ -11,19 +11,20 @@ def main():
     )
 
     # Arguments for determining which function to use
-    parser.add_argument('--load_data', action='store_true')
-    parser.add_argument('--train', action='store_true')
-    parser.add_argument('--test', action='store_true')
-    parser.add_argument('--assign', action='store_true')
-    parser.add_argument('--plot_training_curve', action='store_true')
-    parser.add_argument('--plot_location', action='store_true')
-    parser.add_argument('--classify_by_contours', action='store_true')
-    parser.add_argument('--plot_contour_map', action='store_true')
-    parser.add_argument('--plot_confusion_matrix', action='store_true')
-    parser.add_argument('--plot_structure', action='store_true')
-    parser.add_argument('--plot_assignment', action='store_true')
-    parser.add_argument('--get_assignment_summary', action='store_true')
-    parser.add_argument('--get_classification_summary', action='store_true')
+    parser.add_argument('--load_data', action='store_true', help='Load data from genetic and sample data files.')
+    parser.add_argument('--train', action='store_true', help='Train a neural network.')
+    parser.add_argument('--test', action='store_true', help='Test a trained neural network.')
+    parser.add_argument('--assign', action='store_true', help='Assign samples to populations.')
+    parser.add_argument('--rank_site_importance', action='store_true', help='Rank sites by importance for regression.')
+    parser.add_argument('--plot_training_curve', action='store_true', help='Plot the training curve.')
+    parser.add_argument('--plot_location', action='store_true', help='Plot the xy coordinates of samples compared to population centroids.')
+    parser.add_argument('--classify_by_contours', action='store_true', help='Classify samples using regression neural network results kernel density estimates.')
+    parser.add_argument('--plot_contour_map', action='store_true', help='Plot the contour maps of the predicted sample locations.')
+    parser.add_argument('--plot_confusion_matrix', action='store_true', help='Plot the confusion matrix of the classification results.')
+    parser.add_argument('--plot_structure', action='store_true', help='Plot the structure of population assignment.')
+    parser.add_argument('--plot_assignment', action='store_true', help='Plot the assignment of samples to populations.')
+    parser.add_argument('--get_assignment_summary', action='store_true', help='Get a summary of the assignment results.')
+    parser.add_argument('--get_classification_summary', action='store_true', help='Get a summary of the classification results.')
 
     # Arguments for loading data
     parser.add_argument('--genetic_data', type=str, default=None)
@@ -52,57 +53,65 @@ def main():
         regressor = PopRegressor(data, args.output_folder)
         regressor.save()
 
-    if args.train:
+    elif args.train:
         regressor = PopRegressor.load(args.output_folder)
         regressor.train(args.epochs, args.valid_size, args.cv_splits, args.cv_reps)
         regressor.save()
     
-    if args.test:
+    elif args.test:
         regressor = PopRegressor.load(args.output_folder)
         regressor.test()
         regressor.save()
 
-    if args.assign:
+    elif args.assign:
         regressor = PopRegressor.load(args.output_folder)
         regressor.assign_unknown()
         regressor.save()
 
-    if args.plot_training_curve:
+    elif args.rank_site_importance:
+        regressor = PopRegressor.load(args.output_folder)
+        regressor.rank_site_importance()
+        regressor.save()
+
+    elif args.plot_training_curve:
         regressor = PopRegressor.load(args.output_folder)
         regressor.plot_training_curve()
 
-    if args.plot_location:
+    elif args.plot_location:
         regressor = PopRegressor.load(args.output_folder)
         regressor.plot_location()
 
-    if args.classify_by_contours:
+    elif args.classify_by_contours:
         regressor = PopRegressor.load(args.output_folder)
         regressor.classify_by_contours(args.nboots, args.num_contours)
         regressor.save()
 
-    if args.plot_contour_map:
+    elif args.plot_contour_map:
         regressor = PopRegressor.load(args.output_folder)
         regressor.plot_contour_map()
 
-    if args.plot_confusion_matrix:
+    elif args.plot_confusion_matrix:
         regressor = PopRegressor.load(args.output_folder)
         regressor.plot_confusion_matrix()
 
-    if args.plot_structure:
+    elif args.plot_structure:
         regressor = PopRegressor.load(args.output_folder)
         regressor.plot_structure(args.col_scheme)
 
-    if args.plot_assignment:
+    elif args.plot_assignment:
         regressor = PopRegressor.load(args.output_folder)
         regressor.plot_assignment(args.col_scheme)
 
-    if args.get_assignment_summary:
+    elif args.get_assignment_summary:
         regressor = PopRegressor.load(args.output_folder)
         regressor.get_assignment_summary()
 
-    if args.get_classification_summary:
+    elif args.get_classification_summary:
         regressor = PopRegressor.load(args.output_folder)
-        regressor.get_classification_summary()
+        regressor.get_classification_summary()        
+
+    else:
+        print("No function selected. Use --help for more information.")
 
 if __name__ == "__main__":
     main()

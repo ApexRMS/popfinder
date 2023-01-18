@@ -11,14 +11,15 @@ def main():
     )
 
     # Arguments for determining which function to use
-    parser.add_argument('--load_data', action='store_true')
-    parser.add_argument('--train', action='store_true')
-    parser.add_argument('--test', action='store_true')
-    parser.add_argument('--assign', action='store_true')
-    parser.add_argument('--plot_training_curve', action='store_true')
-    parser.add_argument('--plot_confusion_matrix', action='store_true')
-    parser.add_argument('--plot_structure', action='store_true')
-    parser.add_argument('--plot_assignment', action='store_true')
+    parser.add_argument('--load_data', action='store_true', help='Load data from genetic and sample data files.')
+    parser.add_argument('--train', action='store_true', help='Train a neural network.')
+    parser.add_argument('--test', action='store_true', help='Test a trained neural network.')
+    parser.add_argument('--assign', action='store_true', help='Assign samples to populations.')
+    parser.add_argument('--rank_site_importance', action='store_true', help='Rank sites by importance for classification.')
+    parser.add_argument('--plot_training_curve', action='store_true', help='Plot training curve.')
+    parser.add_argument('--plot_confusion_matrix', action='store_true', help='Plot confusion matrix.')
+    parser.add_argument('--plot_structure', action='store_true', help='Plot structure of population assignment.')
+    parser.add_argument('--plot_assignment', action='store_true', help='Plot assignment of samples to populations.')
 
     # Arguments for loading data
     parser.add_argument('--genetic_data', type=str, default=None)
@@ -43,36 +44,45 @@ def main():
         classifier = PopClassifier(data, args.output_folder)
         classifier.save()
 
-    if args.train:
+    elif args.train:
         classifier = PopClassifier.load(data, args.seed, args.output_folder)
         classifier.train(args.epochs, args.valid_size, args.cv_splits, args.cv_reps)
         classifier.save()
 
-    if args.test:
+    elif args.test:
         classifier = PopClassifier.load(args.output_folder)
         classifier.test()
         classifier.save()
 
-    if args.assign:
+    elif args.assign:
         classifier = PopClassifier.load(args.output_folder)
         classifier.assign()
         classifier.save()
 
-    if args.plot_training_curve:
+    elif args.rank_site_importance:
+        classifier = PopClassifier.load(args.output_folder)
+        classifier.rank_site_importance()
+        classifier.save()
+
+    elif args.plot_training_curve:
         classifier = PopClassifier.load(args.output_folder)
         classifier.plot_training_curve()
 
-    if args.plot_confusion_matrix:
+    elif args.plot_confusion_matrix:
         classifier = PopClassifier.load(args.output_folder)
         classifier.plot_confusion_matrix()
 
-    if args.plot_structure:
+    elif args.plot_structure:
         classifier = PopClassifier.load(args.output_folder)
         classifier.plot_structure(args.col_scheme)
 
-    if args.plot_assignment:
+    elif args.plot_assignment:
         classifier = PopClassifier.load(args.output_folder)
         classifier.plot_assignment(args.col_scheme)
+
+    else:         
+        print("No function selected. Use --help for more information")
+    
 
 if __name__ == "__main__":
     main()
