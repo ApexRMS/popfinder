@@ -19,7 +19,7 @@ class GeneticData():
     genetic_data : str
         Path to genetic data file. Can be .zarr, .vcf, or .h5py.
     sample_data : str
-        Path to sample data file. Must be .tsv or .csv.
+        Path to sample data file. Must be .tsv or .txt.
     test_size : float
         Proportion of data to be used for testing.
     seed : int
@@ -30,7 +30,10 @@ class GeneticData():
     genetic_data : str
         Path to genetic data file. Can be .zarr, .vcf, or .h5py.
     sample_data : str
-        Path to sample data file. Must be .tsv or .csv.
+        Path to sample data file. Must be .tsv or .txt and contain the 
+        columns "x" (longitude), "y" (latitude), "pop" (population name),
+        and "sampleID". The "sampleID" must match the sample IDs in 
+        the genetic data file. 
     seed : int
         Seed for random number generator.
     meanlong : float
@@ -57,6 +60,8 @@ class GeneticData():
     """
     def __init__(self, genetic_data=None, sample_data=None, test_size=0.2, seed=123):
 
+        self._validate_init_inputs(genetic_data, sample_data, test_size, seed)
+
         self.genetic_data = genetic_data
         self.sample_data = sample_data
         self.seed = seed
@@ -81,12 +86,7 @@ class GeneticData():
             genetic information.
         """
 
-        # Check formats of datatypes
-        if os.path.exists(self.genetic_data) is False:
-            raise ValueError("Path to genetic_data does not exist")
-
-        if os.path.exists(self.sample_data) is False:
-            raise ValueError("Path to sample_data does not exist")
+        self._validate_read_data_inputs()
 
         # Load genotypes
         print("loading genotypes")
@@ -344,3 +344,37 @@ class GeneticData():
         data["y"] = data['y_norm'].tolist() * self.sdlat + self.meanlat
 
         return data
+
+    def _validate_init_inputs(self, genetic_data, sample_data, test_size, seed):
+
+        if genetic_data is not None and not isinstance(genetic_data, str):
+            raise ValueError("genetic_data must be a string")
+
+        if sample_data is not None and not isinstance(sample_data, str):
+            raise ValueError("sample_data must be a string")
+
+        if not isinstance(test_size, float):
+            raise ValueError("test_size must be a float")
+
+        if not isinstance(seed, int):
+            raise ValueError("seed must be an integer")
+
+    def _validate_read_data_inputs(self):
+
+        if self.genetic_data is None:
+            raise ValueError("genetic_data is None")
+
+        if self.sample_data is None:
+            raise ValueError("sample_data is None")
+
+        if os.path.exists(self.genetic_data) is False:
+            raise ValueError("Path to genetic_data does not exist")
+
+        if os.path.exists(self.sample_data) is False:
+            raise ValueError("Path to sample_data does not exist")
+
+        if self.sample_data.endswith((".txt", ".tsv", ".csv")) is False:
+            raise ValueError("sample_data must have extension 'txt', or 'tsv'")
+
+        locs = pd.read_csv(self.sample_data, sep="\t")
+        
