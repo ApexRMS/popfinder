@@ -97,14 +97,14 @@ def test_classifier_inputs():
     with pytest.raises(TypeError, match="output_folder must be a string"):
         PopClassifier(data_obj, output_folder=123)
 
-    with pytest.raises(TypeError, match="output_folder must be a valid directory"):
+    with pytest.raises(ValueError, match="output_folder must be a valid directory"):
         PopClassifier(data_obj, output_folder="bad/path")
 
 def test_classifier_train():
 
     data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
                     sample_data="tests/test_data/testNA.txt")
-    classifier = PopClassifier(data_obj)
+    classifier = PopClassifier(data_obj, output_folder=TEST_OUTPUT_FOLDER)
     
     assert isinstance(classifier, PopClassifier)
     assert classifier.data.data.equals(data_obj.data)
@@ -120,7 +120,7 @@ def test_classifier_train():
         classifier.train(valid_size="0.2")
 
     with pytest.raises(ValueError, match="valid_size must be between 0 and 1"):
-        classifier.train(valid_size=2)   
+        classifier.train(valid_size=2.5)   
 
     with pytest.raises(TypeError, match="cv_splits must be an integer"):
         classifier.train(cv_splits="0.2")
@@ -132,16 +132,16 @@ def test_classifier_train():
         classifier.train(learning_rate="0.2")
 
     with pytest.raises(ValueError, match="learning_rate must be between 0 and 1"):
-        classifier.train(learning_rate=2)     
+        classifier.train(learning_rate=2.7)     
 
     with pytest.raises(TypeError, match="batch_size must be an integer"):
         classifier.train(batch_size=0.5)
 
     with pytest.raises(TypeError, match="dropout_prop must be a float"):
-        classifier.train(dropout_size="0.2")   
+        classifier.train(dropout_prop="0.2")   
 
     with pytest.raises(ValueError, match="dropout_prop must be between 0 and 1"):
-        classifier.train(dropout_size=2) 
+        classifier.train(dropout_prop=2) 
 
     classifier.train()
     assert isinstance(classifier.train_history, pd.DataFrame)
@@ -237,3 +237,19 @@ def test_classifier_save_and_load():
 
 
 # Test regressor class
+def test_regressor_inputs():
+
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                        sample_data="tests/test_data/testNA.txt")
+
+    with pytest.raises(TypeError, match="data must be an instance of GeneticData"):
+        PopRegressor(data=None)
+
+    with pytest.raises(TypeError, match="random_state must be an integer"):
+        PopRegressor(data_obj, random_state=0.5)
+
+    with pytest.raises(TypeError, match="output_folder must be a string"):
+        PopRegressor(data_obj, output_folder=123)
+
+    with pytest.raises(TypeError, match="output_folder must be a valid directory"):
+        PopRegressor(data_obj, output_folder="bad/path")

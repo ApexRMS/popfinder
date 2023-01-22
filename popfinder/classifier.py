@@ -24,11 +24,9 @@ class PopClassifier(object):
     """
     A class to represent a classifier neural network object for population assignment.
     """
-    def __init__(self, data=None, load_path=None, random_state=123, output_folder=None):
+    def __init__(self, data, random_state=123, output_folder=None):
 
-        self._validate_init_inputs(data, load_path, random_state, output_folder)
-        if load_path is not None:
-            self.load(load_path)
+        self._validate_init_inputs(data, random_state, output_folder)
 
         self.__data = data # GeneticData object
         self.__random_state = random_state
@@ -45,7 +43,6 @@ class PopClassifier(object):
         self.__recall = None
         self.__f1 = None
         self.__confusion_matrix = None
-
         self.__nn_type = "classifier"
 
     @property
@@ -459,13 +456,10 @@ class PopClassifier(object):
         """
         return _load(load_path)
 
-    def _validate_init_inputs(self, data, load_path, random_state, output_folder):
+    def _validate_init_inputs(self, data, random_state, output_folder):
 
-        if not isinstance(data, GeneticData) and load_path is None:
+        if not isinstance(data, GeneticData):
             raise TypeError("data must be an instance of GeneticData")
-
-        if load_path is not None and not isinstance(load_path, str):
-            raise TypeError("load_path must be a string")
 
         if not isinstance(random_state, int):
             raise TypeError("random_state must be an integer")

@@ -106,6 +106,8 @@ class PopRegressor(object):
     """
     def __init__(self, data, nboots=20, random_state=123, output_folder=None):
 
+        self._validate_init_inputs(data, nboots, random_state, output_folder)
+
         self.__data = data # GeneticData object
         self.__nboots = nboots
         self.__random_state = random_state
@@ -993,3 +995,21 @@ class PopRegressor(object):
         plt.close()
 
         return cset
+
+    # Validation functions
+    def _validate_init_inputs(self, data, load_path, nboots, random_state, output_folder):
+        if not isinstance(data, GeneticData) and load_path is None:
+            raise TypeError("data must be an instance of GeneticData")
+
+        if load_path is not None and not isinstance(load_path, str):
+            raise TypeError("load_path must be a string")
+
+        if not isinstance(random_state, int):
+            raise TypeError("random_state must be an integer")
+
+        if output_folder is not None:
+            if not isinstance(output_folder, str):
+                raise TypeError("output_folder must be a string")
+
+            if not os.path.isdir(output_folder):
+                raise ValueError("output_folder must be a valid directory")
