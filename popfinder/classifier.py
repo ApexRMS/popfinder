@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import os
 
+from popfinder.dataloader import GeneticData
 from popfinder._neural_networks import ClassifierNet
 from popfinder._helper import _generate_train_inputs
 from popfinder._helper import _generate_data_loaders
@@ -23,7 +24,11 @@ class PopClassifier(object):
     """
     A class to represent a classifier neural network object for population assignment.
     """
-    def __init__(self, data, random_state=123, output_folder=None):
+    def __init__(self, data=None, load_path=None, random_state=123, output_folder=None):
+
+        self._validate_init_inputs(data, load_path, random_state, output_folder)
+        if load_path is not None:
+            self.load(load_path)
 
         self.data = data # GeneticData object
         self.random_state = random_state
@@ -69,6 +74,8 @@ class PopClassifier(object):
         -------
         None.
         """
+        self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
+                                    learning_rate, batch_size, dropout_prop)
 
         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
@@ -376,7 +383,7 @@ class PopClassifier(object):
         """
         _save(self, save_path, filename)
 
-    def load(self, load_path=None, filename="classifier.pkl"):
+    def load(self, load_path=None):
         """
         Loads a saved instance of the class from a pickle file.
 
@@ -384,11 +391,62 @@ class PopClassifier(object):
         ----------
         load_path : str, optional
             The path to load the file from. The default is None.
-        filename : str, optional
-            The name of the file to load. The default is "classifier.pkl".
         
         Returns
         -------
         None
         """
-        _load(self, load_path, filename)
+        _load(self, load_path)
+
+    def _validate_init_inputs(self, data, load_path, random_state, output_folder):
+
+        if not isinstance(data, GeneticData) and load_path is None:
+            raise TypeError("data must be an instance of GeneticData")
+
+        if load_path is not None and not isinstance(load_path, str):
+            raise TypeError("load_path must be a string")
+
+        if not isinstance(random_state, int):
+            raise TypeError("random_state must be an integer")
+
+        if output_folder is not None:
+            if not isinstance(output_folder, str):
+                raise TypeError("output_folder must be a string")
+
+            if not os.path.isdir(output_folder):
+                raise ValueError("output_folder must be a valid directory")
+
+    def _validate_train_inputs(self, epochs, valid_size, cv_splits, cv_reps,
+                               learning_rate, batch_size, dropout_prop):
+
+        if not isinstance(epochs, int):
+            raise TypeError("epochs must be an integer")
+        
+        if not isinstance(valid_size, float):
+            raise TypeError("valid_size must be a float")
+
+        if valid_size > 1 or valid_size < 0:
+            raise ValueError("valid_size must be between 0 and 1")
+        
+        if not isinstance(cv_splits, int):
+            raise TypeError("cv_splits must be an integer")
+
+        if not isinstance(cv_reps, int):
+            raise TypeError("cv_reps must be an integer")
+
+        if not isinstance(learning_rate, float):
+            raise TypeError("learning_rate must be a float")
+
+        if learning_rate > 1 or learning_rate < 0:
+            raise ValueError("learning_rate must be between 0 and 1")
+
+        if not isinstance(batch_size, int):
+            raise TypeError("batch_size must be an integer")
+
+        if not isinstance(dropout_prop, float) and not isinstance(dropout_prop, int):
+            raise TypeError("dropout_prop must be a float")
+
+        if dropout_prop > 1 or dropout_prop < 0:
+            raise ValueError("dropout_prop must be between 0 and 1")
+
+

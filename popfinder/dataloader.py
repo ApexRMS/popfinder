@@ -356,6 +356,9 @@ class GeneticData():
         if not isinstance(test_size, float):
             raise ValueError("test_size must be a float")
 
+        if test_size > 1 or test_size < 0:
+            raise ValueError("test_size must be between 0 and 1")
+
         if not isinstance(seed, int):
             raise ValueError("seed must be an integer")
 
@@ -377,4 +380,7 @@ class GeneticData():
             raise ValueError("sample_data must have extension 'txt', or 'tsv'")
 
         locs = pd.read_csv(self.sample_data, sep="\t")
+        locs_list = locs.columns.tolist()
+        if set(locs_list) != set(["x", "pop", "y", "sampleID"]):
+            raise ValueError("sample_data file does not have correct columns")
         

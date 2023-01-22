@@ -88,11 +88,11 @@ def _save(obj, save_path=None, file="model.pkl"):
     with open(os.path.join(save_path, file), "wb") as f:
         pickle.dump(obj, f)
 
-def _load(obj, load_path=None, file="model.pkl"):
+def _load(obj, load_path=None):
     """
     Loads a saved instance of the class from a pickle file.
     """
     if load_path is None:
         load_path = obj.output_folder
-    with open(os.path.join(load_path, file), "rb") as f:
+    with open(os.path.join(load_path), "rb") as f:
         return pickle.load(f)
