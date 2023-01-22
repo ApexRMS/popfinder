@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 import os
+import re
 
 TEST_OUTPUT_FOLDER = "tests/test_outputs"
 
@@ -245,11 +246,149 @@ def test_regressor_inputs():
     with pytest.raises(TypeError, match="data must be an instance of GeneticData"):
         PopRegressor(data=None)
 
+    with pytest.raises(TypeError, match="nboots must be an integer"):
+        PopRegressor(data=data_obj, nboots=0.5)
+
     with pytest.raises(TypeError, match="random_state must be an integer"):
         PopRegressor(data_obj, random_state=0.5)
 
     with pytest.raises(TypeError, match="output_folder must be a string"):
         PopRegressor(data_obj, output_folder=123)
 
-    with pytest.raises(TypeError, match="output_folder must be a valid directory"):
+    with pytest.raises(ValueError, match="output_folder must be a valid directory"):
         PopRegressor(data_obj, output_folder="bad/path")
+
+def test_regressor_train():
+
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                    sample_data="tests/test_data/testNA.txt")
+    regressor = PopRegressor(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+    
+    assert isinstance(regressor, PopRegressor)
+    assert regressor.data.data.equals(data_obj.data)
+    assert regressor.data.knowns.equals(data_obj.knowns)
+    assert regressor.data.unknowns.equals(data_obj.unknowns)
+    assert regressor.data.train.equals(data_obj.train)
+    assert regressor.data.test.equals(data_obj.test)
+
+    with pytest.raises(TypeError, match="epochs must be an integer"):
+        regressor.train(epochs=0.5)
+
+    with pytest.raises(TypeError, match="valid_size must be a float"):
+        regressor.train(valid_size="0.2")
+
+    with pytest.raises(ValueError, match="valid_size must be between 0 and 1"):
+        regressor.train(valid_size=2.5)   
+
+    with pytest.raises(TypeError, match="cv_splits must be an integer"):
+        regressor.train(cv_splits="0.2")
+
+    with pytest.raises(TypeError, match="cv_reps must be an integer"):
+        regressor.train(cv_reps="0.2")
+
+    with pytest.raises(TypeError, match="learning_rate must be a float"):
+        regressor.train(learning_rate="0.2")
+
+    with pytest.raises(ValueError, match="learning_rate must be between 0 and 1"):
+        regressor.train(learning_rate=2.7)     
+
+    with pytest.raises(TypeError, match="batch_size must be an integer"):
+        regressor.train(batch_size=0.5)
+
+    with pytest.raises(TypeError, match="dropout_prop must be a float"):
+        regressor.train(dropout_prop="0.2")   
+
+    with pytest.raises(ValueError, match="dropout_prop must be between 0 and 1"):
+        regressor.train(dropout_prop=2) 
+
+    with pytest.raises(TypeError, match="boot_data must be an instance of GeneticData"):
+        regressor.train(boot_data="0.2")
+
+    regressor.train()
+    assert isinstance(regressor.train_history, pd.DataFrame)
+    assert regressor.train_history.empty == False
+    assert isinstance(regressor.best_model, torch.nn.Module)
+
+def test_regressor_test():
+
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                    sample_data="tests/test_data/testNA.txt")
+    regressor = PopRegressor(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+    regressor.train()
+    regressor.test()
+
+    assert isinstance(regressor.test_results, pd.DataFrame)
+    assert regressor.test_results.empty == False
+    assert isinstance(regressor.median_distance, float)
+    assert isinstance(regressor.mean_distance, float)
+    assert isinstance(regressor.r2_long, float)
+    assert isinstance(regressor.r2_lat, float)
+    assert isinstance(regressor.summary, dict)
+
+def test_regressor_assign_unknown_and_get_results():
+
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                    sample_data="tests/test_data/testNA.txt")
+    regressor = PopRegressor(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+    regressor.train()
+    regressor.test()
+    unknown_data = regressor.assign_unknown()
+
+    assert unknown_data.equals(regressor.regression)
+    assert os.path.exists(os.path.join(regressor.output_folder,
+                          "regressor_assignment_results.csv"))
+    os.remove(os.path.join(regressor.output_folder,
+                            "regressor_assignment_results.csv"))
+
+    assign_sum = regressor.get_assignment_summary(save=False)
+    assert isinstance(assign_sum, dict)
+    assert not os.path.exists(os.path.join(regressor.output_folder,
+                              "regressor_classification_summary.csv"))
+
+    with pytest.raises(ValueError, match=re.escape("Must run classify_by_contours() before getting summary.")):
+        regressor.get_classification_summary(save=False)
+
+    site_rank = regressor.rank_site_importance()
+    assert isinstance(site_rank, pd.DataFrame)
+    assert site_rank.empty == False
+    assert len(regressor.data.data.alleles[0]) == len(site_rank)
+
+def test_regressor_classify_by_contours():
+
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                    sample_data="tests/test_data/testNA.txt")
+    regressor = PopRegressor(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+
+    with pytest.raises(TypeError, match="nboots must be an integer"):
+        regressor.classify_by_contours(nboots=0.5)
+
+    with pytest.raises(TypeError, match="num_contours must be an integer"):
+        regressor.classify_by_contours(num_contours=0.5)
+
+    with pytest.raises(TypeError, match="save_plots must be a boolean"):
+        regressor.classify_by_contours(save_plots="True")
+
+    with pytest.raises(TypeError, match="save must be a boolean"):
+        regressor.classify_by_contours(save="True")
+
+    regressor.classify_by_contours()
+
+    assert isinstance(regressor.classification_test_results, pd.DataFrame)
+    assert regressor.classification_test_results.empty == False
+    assert isinstance(regressor.contour_classification, pd.DataFrame)
+    assert regressor.contour_classification.empty == False
+    assert isinstance(regressor.classification_confusion_matrix, np.ndarray)
+    assert isinstance(regressor.classification_accuracy, float)
+    assert isinstance(regressor.classification_precision, float)
+    assert isinstance(regressor.classification_recall, float)
+    assert isinstance(regressor.classification_f1, float)
+
+    class_sum = regressor.get_classification_summary(save=False)
+    assert isinstance(class_sum, dict)
+    assert class_sum["accuracy"] == regressor.classification_accuracy
+    assert class_sum["precision"] == regressor.classification_precision
+    assert class_sum["recall"] == regressor.classification_recall
+    assert class_sum["f1"] == regressor.classification_f1
+    assert class_sum["confusion_matrix"] == regressor.classification_confusion_matrix.tolist()
+
+

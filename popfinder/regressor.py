@@ -116,6 +116,7 @@ class PopRegressor(object):
         self.__output_folder = output_folder
         self.__train_history = None
         self.__best_model = None
+        self.__test_results = None
         self.__regression = None
         self.__median_distance = None
         self.__mean_distance = None
@@ -154,6 +155,10 @@ class PopRegressor(object):
     @property
     def best_model(self):
         return self.__best_model
+
+    @property
+    def test_results(self):
+        return self.__test_results
 
     @property
     def regression(self):
@@ -240,6 +245,9 @@ class PopRegressor(object):
         -------
         None.
         """
+        self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
+                            learning_rate, batch_size, dropout_prop, boot_data)
+
         if boot_data is None:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                             cv_reps, seed=self.random_state)
@@ -273,8 +281,8 @@ class PopRegressor(object):
 
         loss_df_final = pd.concat([loss_df_final, loss_df])
 
-        self.train_history = loss_df_final
-        self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+        self.__train_history = loss_df_final
+        self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
     def test(self, boot_data=None, verbose=False):
         """
@@ -313,17 +321,19 @@ class PopRegressor(object):
             ) for x in range(len(y_pred))
         ]
 
-        self.median_distance = np.median(dists)
-        self.mean_distance = np.mean(dists)
-        self.r2_long = np.corrcoef(y_pred[:, 0], y_test[:, 0])[0][1] ** 2
-        self.r2_lat = np.corrcoef(y_pred[:, 1], y_test[:, 1])[0][1] ** 2
+        # true coordinates vs predicted coordinates
+        self.__test_results = test_input[["x", "y", "x_pred", "y_pred"]]
 
-        self.summary = self.get_assignment_summary()
+        self.__median_distance = np.median(dists)
+        self.__mean_distance = np.mean(dists)
+        self.__r2_long = np.corrcoef(y_pred[:, 0], y_test[:, 0])[0][1] ** 2
+        self.__r2_lat = np.corrcoef(y_pred[:, 1], y_test[:, 1])[0][1] ** 2
+
+        self.__summary = self.get_assignment_summary()
 
         if verbose:
             print(self.summary)
 
-        return test_input
 
     def assign_unknown(self, save=True, boot_data=None):
         """
@@ -354,7 +364,7 @@ class PopRegressor(object):
         unknown_data.loc[:, "x_pred"] = y_pred[:, 0]
         unknown_data.loc[:, "y_pred"] = y_pred[:, 1]
 
-        self.regression = unknown_data
+        self.__regression = unknown_data
 
         if save:
             unknown_data.to_csv(os.path.join(self.output_folder,
@@ -385,14 +395,16 @@ class PopRegressor(object):
         -------
         None.
         """
+        self._validate_contour_inputs(nboots, num_contours, save_plots, save)
+
         self._generate_bootstraps(nboots=nboots) # also add option for multiple reps
 
         test_locs = self.test_locs_final
         pred_locs = self.pred_locs_final
 
-        self.classification_test_results = self._test_classification(test_locs,
+        self.__classification_test_results = self._test_classification(test_locs,
             num_contours, save_plots)
-        self.contour_classification = self._classify_unknowns(pred_locs,
+        self.__contour_classification = self._classify_unknowns(pred_locs,
             test_locs, num_contours, save_plots)
 
         if save:
@@ -404,12 +416,12 @@ class PopRegressor(object):
         # Generate classification summary stats from test_report
         y_pred = self.classification_test_results["pred_pop"]
         y_true = self.classification_test_results["true_pop"]
-        self.classification_confusion_matrix = np.round(
+        self.__classification_confusion_matrix = np.round(
             confusion_matrix(y_true, y_pred, normalize="true"), 3)
-        self.classification_accuracy = accuracy_score(y_true, y_pred)
-        self.classification_precision = precision_score(y_true, y_pred, average="weighted")
-        self.classification_recall = recall_score(y_true, y_pred, average="weighted")
-        self.classification_f1 = f1_score(y_true, y_pred, average="weighted")
+        self.__classification_accuracy = accuracy_score(y_true, y_pred)
+        self.__classification_precision = precision_score(y_true, y_pred, average="weighted")
+        self.__classification_recall = recall_score(y_true, y_pred, average="weighted")
+        self.__classification_f1 = f1_score(y_true, y_pred, average="weighted")
 
     # Reporting functions below
     def get_assignment_summary(self, save=True):
@@ -455,6 +467,9 @@ class PopRegressor(object):
             Dictionary containing the summary statistics accuracy, precision,
             recall, f1, and confusion matrix.
         """
+        if self.classification_test_results is None:
+            raise ValueError("Must run classify_by_contours() before getting summary.")
+
         summary = { # need to grab all these items
             "accuracy": [self.classification_accuracy],
             "precision": [self.classification_precision],
@@ -997,12 +1012,12 @@ class PopRegressor(object):
         return cset
 
     # Validation functions
-    def _validate_init_inputs(self, data, load_path, nboots, random_state, output_folder):
-        if not isinstance(data, GeneticData) and load_path is None:
+    def _validate_init_inputs(self, data, nboots, random_state, output_folder):
+        if not isinstance(data, GeneticData):
             raise TypeError("data must be an instance of GeneticData")
 
-        if load_path is not None and not isinstance(load_path, str):
-            raise TypeError("load_path must be a string")
+        if not isinstance(nboots, int):
+            raise TypeError("nboots must be an integer")
 
         if not isinstance(random_state, int):
             raise TypeError("random_state must be an integer")
@@ -1013,3 +1028,54 @@ class PopRegressor(object):
 
             if not os.path.isdir(output_folder):
                 raise ValueError("output_folder must be a valid directory")
+
+    def _validate_train_inputs(self, epochs, valid_size, cv_splits, cv_reps,
+                            learning_rate, batch_size, dropout_prop, boot_data):
+
+        if not isinstance(epochs, int):
+            raise TypeError("epochs must be an integer")
+        
+        if not isinstance(valid_size, float):
+            raise TypeError("valid_size must be a float")
+
+        if valid_size > 1 or valid_size < 0:
+            raise ValueError("valid_size must be between 0 and 1")
+        
+        if not isinstance(cv_splits, int):
+            raise TypeError("cv_splits must be an integer")
+
+        if not isinstance(cv_reps, int):
+            raise TypeError("cv_reps must be an integer")
+
+        if not isinstance(learning_rate, float):
+            raise TypeError("learning_rate must be a float")
+
+        if learning_rate > 1 or learning_rate < 0:
+            raise ValueError("learning_rate must be between 0 and 1")
+
+        if not isinstance(batch_size, int):
+            raise TypeError("batch_size must be an integer")
+
+        if not isinstance(dropout_prop, float) and not isinstance(dropout_prop, int):
+            raise TypeError("dropout_prop must be a float")
+
+        if dropout_prop > 1 or dropout_prop < 0:
+            raise ValueError("dropout_prop must be between 0 and 1")
+
+        if boot_data is not None:
+            if not isinstance(boot_data, GeneticData):
+                raise TypeError("boot_data must be an instance of GeneticData")
+
+    def _validate_contour_inputs(self, nboots, num_contours, save_plots, save):
+            
+        if not isinstance(nboots, int):
+            raise TypeError("nboots must be an integer")
+
+        if not isinstance(num_contours, int):
+            raise TypeError("num_contours must be an integer")
+
+        if not isinstance(save_plots, bool):
+            raise TypeError("save_plots must be a boolean")
+
+        if not isinstance(save, bool):
+            raise TypeError("save must be a boolean")
