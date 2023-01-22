@@ -4,6 +4,7 @@ from torch.autograd import Variable
 from sklearn import preprocessing
 import numpy as np
 import pickle
+import dill
 import os
 
 def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123):
@@ -17,7 +18,7 @@ def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123):
 
     return inputs
 
-def _split_input_classifier(self, input):
+def _split_input_classifier(clf, input):
         
     train_input, valid_input = input
 
@@ -27,9 +28,9 @@ def _split_input_classifier(self, input):
     y_valid = valid_input["pop"] # one hot encode
 
     # Label encode y values
-    self.label_enc = preprocessing.LabelEncoder()
-    y_train = self.label_enc.fit_transform(y_train)
-    y_valid = self.label_enc.transform(y_valid)
+    clf.label_enc = preprocessing.LabelEncoder()
+    y_train = clf.label_enc.fit_transform(y_train)
+    y_valid = clf.label_enc.transform(y_valid)
 
     X_train, y_train = _data_converter(X_train, y_train)
     X_valid, y_valid = _data_converter(X_valid, y_valid)
@@ -86,13 +87,11 @@ def _save(obj, save_path=None, file="model.pkl"):
     if save_path is None:
         save_path = obj.output_folder
     with open(os.path.join(save_path, file), "wb") as f:
-        pickle.dump(obj, f)
+        dill.dump(obj, f)
 
-def _load(obj, load_path=None):
+def _load(load_path=None):
     """
     Loads a saved instance of the class from a pickle file.
     """
-    if load_path is None:
-        load_path = obj.output_folder
-    with open(os.path.join(load_path), "rb") as f:
-        return pickle.load(f)
+    with open(load_path, "rb") as f:
+        return dill.load(f)

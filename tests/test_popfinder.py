@@ -1,6 +1,8 @@
 from popfinder.dataloader import GeneticData
 from popfinder.classifier import PopClassifier
 from popfinder.regressor import PopRegressor
+from popfinder._neural_networks import ClassifierNet
+from popfinder._neural_networks import ClassifierNet
 import pytest
 import numpy as np
 import pandas as pd
@@ -210,12 +212,13 @@ def test_classifier_save_and_load():
     classifier = PopClassifier(data_obj, output_folder=TEST_OUTPUT_FOLDER)
     classifier.train()
     classifier.test()
+    classifier.assign_unknown()
     classifier.save()
 
     assert os.path.exists(os.path.join(classifier.output_folder,
                           "classifier.pkl"))
 
-    classifier2 = PopClassifier(load_path=os.path.join(classifier.output_folder,
+    classifier2 = PopClassifier.load(load_path=os.path.join(classifier.output_folder,
                                 "classifier.pkl"))
 
     assert classifier2.train_history.equals(classifier.train_history)
@@ -226,8 +229,8 @@ def test_classifier_save_and_load():
     assert classifier2.recall == classifier.recall
     assert classifier2.f1 == classifier.f1
     assert classifier2.classification.equals(classifier.classification)
-    assert classifier2.classification_summary == classifier.classification_summary
-    assert classifier2.best_model == classifier.best_model
+    assert isinstance(classifier2.best_model, ClassifierNet)
+    assert isinstance(classifier.best_model, ClassifierNet)
 
     os.remove(os.path.join(classifier.output_folder,
                             "classifier.pkl"))

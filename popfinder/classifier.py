@@ -30,23 +30,83 @@ class PopClassifier(object):
         if load_path is not None:
             self.load(load_path)
 
-        self.data = data # GeneticData object
-        self.random_state = random_state
+        self.__data = data # GeneticData object
+        self.__random_state = random_state
         if output_folder is None:
             output_folder = os.getcwd()
-        self.output_folder = output_folder
-        self.label_enc = None
-        self.train_history = None
-        self.best_model = None
-        self.test_results = None # use for cm and structure plot
-        self.classification = None # use for assignment plot
-        self.accuracy = None
-        self.precision = None
-        self.recall = None
-        self.f1 = None
-        self.confusion_matrix = None
+        self.__output_folder = output_folder
+        self.__label_enc = None
+        self.__train_history = None
+        self.__best_model = None
+        self.__test_results = None # use for cm and structure plot
+        self.__classification = None # use for assignment plot
+        self.__accuracy = None
+        self.__precision = None
+        self.__recall = None
+        self.__f1 = None
+        self.__confusion_matrix = None
 
-        self._nn_type = "classifier"
+        self.__nn_type = "classifier"
+
+    @property
+    def data(self):
+        return self.__data
+
+    @property
+    def random_state(self):
+        return self.__random_state
+    
+    @property
+    def output_folder(self):
+        return self.__output_folder
+
+    @property
+    def label_enc(self):
+        return self.__label_enc
+
+    @label_enc.setter
+    def label_enc(self, value):
+        self.__label_enc = value
+
+    @property
+    def train_history(self):
+        return self.__train_history
+
+    @property
+    def best_model(self):
+        return self.__best_model
+
+    @property
+    def test_results(self):
+        return self.__test_results
+
+    @property
+    def classification(self):
+        return self.__classification
+
+    @property
+    def accuracy(self):
+        return self.__accuracy
+
+    @property
+    def precision(self):
+        return self.__precision
+
+    @property
+    def recall(self):
+        return self.__recall
+
+    @property
+    def f1(self):
+        return self.__f1
+    
+    @property
+    def confusion_matrix(self):
+        return self.__confusion_matrix
+
+    @property
+    def nn_type(self):
+        return self.__nn_type
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0):
@@ -131,8 +191,8 @@ class PopClassifier(object):
                 loss_dict["train"].append(avg_train_loss)
                 loss_dict["valid"].append(avg_valid_loss)
 
-        self.train_history = pd.DataFrame(loss_dict)
-        self.best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+        self.__train_history = pd.DataFrame(loss_dict)
+        self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
     def test(self):
         """
@@ -158,17 +218,17 @@ class PopClassifier(object):
         y_pred_pops = self.label_enc.inverse_transform(y_pred)
         y_true_pops = self.label_enc.inverse_transform(y_true)
 
-        self.test_results = pd.DataFrame({"true_pop": y_true_pops,
+        self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
                                           "pred_pop": y_pred_pops})
-        self.confusion_matrix = np.round(
+        self.__confusion_matrix = np.round(
             confusion_matrix(self.test_results["true_pop"],
                              self.test_results["pred_pop"], 
                              labels=np.unique(y_true_pops).tolist(),
                              normalize="true"), 3)
-        self.accuracy = np.round(accuracy_score(y_true, y_pred), 3)
-        self.precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
-        self.recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
-        self.f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
+        self.__accuracy = np.round(accuracy_score(y_true, y_pred), 3)
+        self.__precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
+        self.__recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
+        self.__f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
 
     def assign_unknown(self, save=True):
         """
@@ -194,7 +254,7 @@ class PopClassifier(object):
         preds = self.label_enc.inverse_transform(preds)
         unknown_data.loc[:, "assigned_pop"] = preds
 
-        self.classification = unknown_data
+        self.__classification = unknown_data
 
         if save:
             unknown_data.to_csv(os.path.join(self.output_folder,
@@ -297,7 +357,7 @@ class PopClassifier(object):
         None
         """
 
-        _plot_training_curve(self.train_history, self._nn_type,
+        _plot_training_curve(self.train_history, self.__nn_type,
             self.output_folder, save)
 
     def plot_confusion_matrix(self, save=True):
@@ -315,7 +375,7 @@ class PopClassifier(object):
         """
 
         _plot_confusion_matrix(self.test_results, self.confusion_matrix,
-            self._nn_type, self.output_folder, save)
+            self.nn_type, self.output_folder, save)
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
         """
@@ -340,7 +400,7 @@ class PopClassifier(object):
         e_preds = self.classification.copy()
 
         _plot_assignment(e_preds, col_scheme, self.output_folder,
-            self._nn_type, save)
+            self.__nn_type, save)
 
     def plot_structure(self, save=True, col_scheme="Spectral"):
         """
@@ -363,7 +423,7 @@ class PopClassifier(object):
                              columns=self.label_enc.classes_,
                              index=self.label_enc.classes_)
 
-        _plot_structure(preds, col_scheme, self._nn_type, 
+        _plot_structure(preds, col_scheme, self.__nn_type, 
             self.output_folder, save)
 
     def save(self, save_path=None, filename="classifier.pkl"):
@@ -383,7 +443,8 @@ class PopClassifier(object):
         """
         _save(self, save_path, filename)
 
-    def load(self, load_path=None):
+    @staticmethod
+    def load(load_path=None):
         """
         Loads a saved instance of the class from a pickle file.
 
@@ -396,7 +457,7 @@ class PopClassifier(object):
         -------
         None
         """
-        _load(self, load_path)
+        return _load(load_path)
 
     def _validate_init_inputs(self, data, load_path, random_state, output_folder):
 
