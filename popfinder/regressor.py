@@ -322,7 +322,7 @@ class PopRegressor(object):
         ]
 
         # true coordinates vs predicted coordinates
-        self.__test_results = test_input[["x", "y", "x_pred", "y_pred"]]
+        self.__test_results = test_input
 
         self.__median_distance = np.median(dists)
         self.__mean_distance = np.mean(dists)
@@ -840,7 +840,7 @@ class PopRegressor(object):
         # Use bootstrap to randomly select sites from training/test/unknown data
         num_sites = self.data.train["alleles"].values[0].shape[0]
 
-        for boot in range(nboots):
+        for _ in range(nboots):
             site_indices = np.random.choice(range(num_sites), size=num_sites,
                                             replace=True)
 
@@ -857,7 +857,8 @@ class PopRegressor(object):
 
             # Train on new training set
             self.train(boot_data=boot_data)
-            test_locs = self.test(boot_data=boot_data)
+            self.test(boot_data=boot_data)
+            test_locs = self.test_results.copy()
             test_locs["sampleID"] = test_locs.index
             pred_locs = self.assign_unknown(boot_data=boot_data)
 

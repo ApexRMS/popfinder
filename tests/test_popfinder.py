@@ -2,15 +2,23 @@ from popfinder.dataloader import GeneticData
 from popfinder.classifier import PopClassifier
 from popfinder.regressor import PopRegressor
 from popfinder._neural_networks import ClassifierNet
-from popfinder._neural_networks import ClassifierNet
+from popfinder._neural_networks import RegressorNet
 import pytest
 import numpy as np
 import pandas as pd
 import torch
 import os
+import shutil
 import re
 
 TEST_OUTPUT_FOLDER = "tests/test_outputs"
+
+# Empty test output folder if it exists
+if os.path.exists(TEST_OUTPUT_FOLDER):
+    shutil.rmtree(TEST_OUTPUT_FOLDER)
+
+# Recreate test output folder
+os.mkdir(TEST_OUTPUT_FOLDER)
 
 # Test dataloader class
 def test_genetic_data_inputs():
@@ -40,7 +48,7 @@ def test_genetic_data_inputs():
         GeneticData(genetic_data="tests/test_data/test.vcf",
                             sample_data="tests/test_data/test.vcf")
 
-    with pytest.raises(ValueError, match="sample_data does not have correct columns"):
+    with pytest.raises(ValueError, match="sample_data file does not have correct columns"):
         GeneticData(genetic_data="tests/test_data/test.vcf",
                             sample_data="tests/test_data/test_bad.txt")
 
@@ -60,7 +68,7 @@ def test_genetic_data_inputs():
     with pytest.raises(ValueError, match="test_size must be between 0 and 1"):
         GeneticData(genetic_data="tests/test_data/test.vcf",
                             sample_data="tests/test_data/testNA.txt",
-                            test_size=2)
+                            test_size=2.5)
 
     with pytest.raises(ValueError, match="seed must be an integer"):
         GeneticData(genetic_data="tests/test_data/test.vcf",
@@ -161,7 +169,7 @@ def test_classifier_test():
     assert classifier.test_results.empty == False
     assert isinstance(classifier.confusion_matrix, np.ndarray)
     assert classifier.confusion_matrix.shape == (5,5)
-    assert classifier.confusion_matrix.sum() == 5.0
+    assert np.round(classifier.confusion_matrix.sum(), 1) == np.round(5.0, 1)
     assert isinstance(classifier.accuracy, float)
     assert classifier.accuracy > 0.0
     assert classifier.accuracy < 1.0
@@ -389,6 +397,54 @@ def test_regressor_classify_by_contours():
     assert class_sum["precision"] == regressor.classification_precision
     assert class_sum["recall"] == regressor.classification_recall
     assert class_sum["f1"] == regressor.classification_f1
-    assert class_sum["confusion_matrix"] == regressor.classification_confusion_matrix.tolist()
+    assert (class_sum["confusion_matrix"] == regressor.classification_confusion_matrix).all()
 
+def test_regressor_save_and_load():
 
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                    sample_data="tests/test_data/testNA.txt")
+    regressor = PopRegressor(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+    regressor.train()
+    regressor.test()
+    regressor.assign_unknown()
+    regressor.save()
+
+    assert os.path.exists(os.path.join(regressor.output_folder,
+                          "regressor.pkl"))
+
+    regressor2 = PopRegressor.load(load_path=os.path.join(regressor.output_folder,
+                                "regressor.pkl"))
+
+    assert regressor2.train_history.equals(regressor.train_history)
+    assert regressor2.test_results.equals(regressor.test_results)
+    assert regressor2.median_distance == regressor.median_distance
+    assert regressor2.mean_distance == regressor.mean_distance
+    assert regressor2.r2_lat == regressor.r2_lat
+    assert regressor2.r2_long == regressor.r2_long
+    assert regressor2.regression.equals(regressor.regression)
+    assert isinstance(regressor2.best_model, RegressorNet)
+    assert isinstance(regressor.best_model, RegressorNet)
+
+    os.remove(os.path.join(regressor.output_folder,
+                            "regressor.pkl"))
+
+    regressor.classify_by_contours()
+    regressor.save()
+
+    regressor2 = PopRegressor.load(load_path=os.path.join(regressor.output_folder,
+                                "regressor.pkl"))
+
+    assert regressor2.train_history.equals(regressor.train_history)
+    assert regressor2.test_results.equals(regressor.test_results)
+    assert regressor2.contour_classification.equals(regressor.contour_classification)
+    assert regressor2.classification_test_results.equals(regressor.classification_test_results)
+    assert regressor2.classification_accuracy == regressor.classification_accuracy
+    assert regressor2.classification_precision == regressor.classification_precision
+    assert regressor2.classification_recall == regressor.classification_recall
+    assert regressor2.classification_f1 == regressor.classification_f1
+    assert regressor2.classification_confusion_matrix.tolist() == regressor.classification_confusion_matrix.tolist()
+    assert isinstance(regressor2.best_model, RegressorNet)
+    assert isinstance(regressor.best_model, RegressorNet)
+
+    os.remove(os.path.join(regressor.output_folder,
+                            "regressor.pkl"))

@@ -377,7 +377,7 @@ class GeneticData():
             raise ValueError("Path to sample_data does not exist")
 
         if self.sample_data.endswith((".txt", ".tsv", ".csv")) is False:
-            raise ValueError("sample_data must have extension 'txt', or 'tsv'")
+            raise ValueError("sample_data must have extension 'txt' or 'tsv'")
 
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs_list = locs.columns.tolist()
