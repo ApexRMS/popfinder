@@ -6,7 +6,6 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precisio
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib
-import pickle
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -107,29 +106,108 @@ class PopRegressor(object):
     """
     def __init__(self, data, nboots=20, random_state=123, output_folder=None):
 
-        self.data = data # GeneticData object
-        self.nboots = nboots
-        self.random_state = random_state
+        self.__data = data # GeneticData object
+        self.__nboots = nboots
+        self.__random_state = random_state
         if output_folder is None:
             output_folder = os.getcwd()
-        self.output_folder = output_folder
-        self.train_history = None
-        self.best_model = None
-        self.regression = None
-        self.median_distance = None
-        self.mean_distance = None
-        self.r2_lat = None
-        self.r2_long = None
-        self.summary = None
-        self.contour_classification = None
-        self.classification_test_results = None
-        self.classification_accuracy = None
-        self.classification_precision = None
-        self.classification_recall = None
-        self.classification_f1 = None
-        self.classification_confusion_matrix = None
+        self.__output_folder = output_folder
+        self.__train_history = None
+        self.__best_model = None
+        self.__regression = None
+        self.__median_distance = None
+        self.__mean_distance = None
+        self.__r2_lat = None
+        self.__r2_long = None
+        self.__summary = None
+        self.__contour_classification = None
+        self.__classification_test_results = None
+        self.__classification_accuracy = None
+        self.__classification_precision = None
+        self.__classification_recall = None
+        self.__classification_f1 = None
+        self.__classification_confusion_matrix = None
+        self.__nn_type = "regressor"
 
-        self._nn_type = "regressor"
+    @property
+    def data(self):
+        return self.__data
+
+    @property
+    def nboots(self):
+        return self.__nboots
+
+    @property
+    def random_state(self):
+        return self.__random_state
+
+    @property
+    def output_folder(self):
+        return self.__output_folder
+
+    @property
+    def train_history(self):
+        return self.__train_history
+
+    @property
+    def best_model(self):
+        return self.__best_model
+
+    @property
+    def regression(self):
+        return self.__regression
+
+    @property
+    def median_distance(self):
+        return self.__median_distance
+
+    @property
+    def mean_distance(self):
+        return self.__mean_distance
+
+    @property
+    def r2_lat(self):
+        return self.__r2_lat
+
+    @property
+    def r2_long(self):
+        return self.__r2_long
+
+    @property
+    def summary(self):
+        return self.__summary
+
+    @property
+    def contour_classification(self):
+        return self.__contour_classification
+
+    @property
+    def classification_test_results(self):
+        return self.__classification_test_results
+
+    @property
+    def classification_accuracy(self):
+        return self.__classification_accuracy
+
+    @property
+    def classification_precision(self): 
+        return self.__classification_precision
+
+    @property
+    def classification_recall(self):
+        return self.__classification_recall
+
+    @property
+    def classification_f1(self):
+        return self.__classification_f1
+
+    @property
+    def classification_confusion_matrix(self):
+        return self.__classification_confusion_matrix
+
+    @property
+    def nn_type(self):
+        return self.__nn_type
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None):
@@ -449,7 +527,7 @@ class PopRegressor(object):
         None.
         """
 
-        _plot_training_curve(self.train_history, self._nn_type,
+        _plot_training_curve(self.train_history, self.nn_type,
             self.output_folder, save)
 
     def plot_location(self, sampleID=None, save=True):
@@ -588,7 +666,7 @@ class PopRegressor(object):
         """
         _plot_confusion_matrix(self.classification_test_results,
             self.classification_confusion_matrix,
-            self._nn_type, self.output_folder, save)
+            self.nn_type, self.output_folder, save)
 
 
     def plot_assignment(self, save=True, col_scheme="Spectral"):
@@ -613,7 +691,7 @@ class PopRegressor(object):
         e_preds = self.contour_classification.copy()
 
         _plot_assignment(e_preds, col_scheme, self.output_folder,
-            self._nn_type, save)
+            self.nn_type, save)
 
 
     def plot_structure(self, save=True, col_scheme="Spectral"):
@@ -638,7 +716,7 @@ class PopRegressor(object):
                              columns=classes,
                              index=classes)
 
-        _plot_structure(preds, col_scheme, self._nn_type, 
+        _plot_structure(preds, col_scheme, self.nn_type, 
             self.output_folder, save)
 
     def save(self, save_path=None, filename="regressor.pkl"):
@@ -659,23 +737,21 @@ class PopRegressor(object):
         """
         _save(self, save_path, filename)
 
-    def load(self, load_path=None, filename="regressor.pkl"):
+    @staticmethod
+    def load(load_path=None):
         """
         Loads a saved instance of the class from a pickle file.
 
         Parameters
         ----------
         load_path : str, optional
-            The path to load the file from. If None, the file will be loaded
-            from the current working directory. The default is None.
-        filename : str, optional
-            The name of the file to load. The default is "regressor.pkl".
-
+            The path to load the file from. The default is None.
+        
         Returns
         -------
-        None.
+        None
         """
-        _load(self, load_path, filename)
+        return _load(load_path)
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
