@@ -22,20 +22,20 @@ def main():
     parser.add_argument('--plot_assignment', action='store_true', help='Plot assignment of samples to populations.')
 
     # Arguments for loading data
-    parser.add_argument('--genetic_data', type=str, default=None)
-    parser.add_argument('--sample_data', type=str, default=None)
-    parser.add_argument('--test_size', type=float, default=None)
-    parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--output_folder', type=str, default=None)
+    parser.add_argument('--genetic_data', type=str, default=None, help='Path to genetic data file.')
+    parser.add_argument('--sample_data', type=str, default=None, help='Path to sample data file.')
+    parser.add_argument('--test_size', type=float, default=None, help='Proportion of samples to use for testing.')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed for splitting data into training and testing sets.')
+    parser.add_argument('--output_folder', type=str, default=None, help='Path to output folder. (Default: current directory)')
 
     # Arguments for training
-    parser.add_argument('--epochs', type=int, default=None)
-    parser.add_argument('--valid_size', type=float, default=None)
-    parser.add_argument('--cv_splits', type=int, default=None)
-    parser.add_argument('--cv_reps', type=int, default=None)
+    parser.add_argument('--epochs', type=int, default=None, help='Number of epochs to train for.')
+    parser.add_argument('--valid_size', type=float, default=None, help='Proportion of training data to use for validation.')
+    parser.add_argument('--cv_splits', type=int, default=None, help='Number of cross-validation splits.')
+    parser.add_argument('--cv_reps', type=int, default=None, help='Number of cross-validation repetitions.')
 
     # Arguments for plotting structure/assignment
-    parser.add_argument('--col_scheme', type=str, default=None)
+    parser.add_argument('--col_scheme', type=str, default=None, help='Color scheme for plotting structure/assignment. (Default: "Spectral")')
 
     args = parser.parse_args()
 
@@ -45,7 +45,7 @@ def main():
         classifier.save()
 
     elif args.train:
-        classifier = PopClassifier.load(data, args.seed, args.output_folder)
+        classifier = PopClassifier.load(args.output_folder)
         classifier.train(args.epochs, args.valid_size, args.cv_splits, args.cv_reps)
         classifier.save()
 
