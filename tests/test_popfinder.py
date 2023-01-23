@@ -448,3 +448,7 @@ def test_regressor_save_and_load():
 
     os.remove(os.path.join(regressor.output_folder,
                             "regressor.pkl"))
+
+# Empty test output folder if it exists
+if os.path.exists(TEST_OUTPUT_FOLDER):
+    shutil.rmtree(TEST_OUTPUT_FOLDER)
