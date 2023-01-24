@@ -94,7 +94,7 @@ pip install popfinder
 
 ## Usage
 
-The following usage examples use the genetic data and sample data found in this [folder](). The data used in the following example is actual genomic data obtained from RAD-seq analysis of Leach's storm-petrels from 5 unique populations.
+The following usage examples use the genetic data and sample data found in this [folder](tests\test_data). The data used in the following example is actual genomic data obtained from RAD-seq analysis of Leach's storm-petrels from 5 unique populations.
 
 ### Python IDE
 
@@ -166,7 +166,7 @@ We can view the training history of our `classifier` using the below method. Thi
 classifier.plot_training_curve()
 ```
 
-![image of training plot]()
+![image of training plot](figures\classifier_training_history.png)
 
 Once we are satisfied with the training of our model, we can use the `test()` method to evaluate our trained model.
 
@@ -180,7 +180,7 @@ We can visualize the accuracy, precision, and recall of the model by plotting a 
 classifier.plot_confusion_matrix()
 ```
 
-![image of confusion matrix]()
+![image of confusion matrix](figures\classifier_confusion_matrix.png)
 
 Finally, we can use our trained and tested model to assign individuals of unknown origin to populations.
 
@@ -194,7 +194,7 @@ After running the above code, we can either display a dataframe or view a plot o
 classifier.plot_assignment()
 ```
 
-![image of assignment plot]()
+![image of assignment plot](figures\classifier_assignment_plot.png)
 
 You can also retrieve information about which SNPs were most influential in training the model using the `rank_site_importance()` method. This method will return a dataframe containing information about each SNP and the corresponding error when the SNP is randomized during model training and validation. In the dataframe, SNPs that have a higher error value also have greater influence on the model, and by extension play a greater role in population assignment.
 
@@ -258,7 +258,7 @@ Once completed, you can view the contour maps for each sample of unknown origin 
 regressor.plot_contour_map()
 ```
 
-![image of contour map]()
+![image of contour map](figures\contour_LESP_65.png)
 
 ### Command Line
 

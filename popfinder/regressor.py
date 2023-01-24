@@ -23,6 +23,9 @@ from popfinder._visualize import _plot_training_curve
 from popfinder._visualize import _plot_confusion_matrix
 from popfinder._visualize import _plot_structure
 
+import warnings
+warnings.filterwarnings("ignore")
+
 class PopRegressor(object):
     """
     A class to represent a regressor neural network object for population assignment.
@@ -239,7 +242,8 @@ class PopRegressor(object):
         dropout_prop : float, optional
             Dropout proportion for the neural network. The default is 0.
         boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. The default is None.
+            GeneticData object to use for bootstrapping. This argument
+            is used internally. The default is None.
             
         Returns
         -------
@@ -284,7 +288,7 @@ class PopRegressor(object):
         self.__train_history = loss_df_final
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, boot_data=None, verbose=False):
+    def test(self, boot_data=None, save=True, verbose=False):
         """
         Tests the regression neural network on the test data.
         
@@ -323,6 +327,10 @@ class PopRegressor(object):
 
         # true coordinates vs predicted coordinates
         self.__test_results = test_input
+
+        if save:
+            self.test_results.to_csv(os.path.join(self.output_folder,
+                                     "regressor_test_results.csv"), index=False)
 
         self.__median_distance = np.median(dists)
         self.__mean_distance = np.mean(dists)
@@ -372,7 +380,9 @@ class PopRegressor(object):
 
         return unknown_data
 
-    def classify_by_contours(self, nboots=5, num_contours=5,
+    def classify_by_contours(self, nboots=5, nreps=5, num_contours=5,
+        epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
+        learning_rate=0.001, batch_size=16, dropout_prop=0, 
         save_plots=True, save=True):
         """
         Classifies unknown samples by kernel density estimates (contours).
@@ -384,6 +394,8 @@ class PopRegressor(object):
         ----------
         nboots : int, optional
             Number of bootstraps to perform. The default is 5.
+        nreps : int, optional
+            Number of repetitions for each bootstrap. The default is 5.
         num_contours : int, optional
             Number of contours to generate. The default is 5.
         save_plots : bool, optional
@@ -397,7 +409,9 @@ class PopRegressor(object):
         """
         self._validate_contour_inputs(nboots, num_contours, save_plots, save)
 
-        self._generate_bootstraps(nboots=nboots) # also add option for multiple reps
+        self._generate_bootstraps(nboots, nreps, epochs, valid_size,
+                                  cv_splits, cv_reps, learning_rate, batch_size,
+                                  dropout_prop) 
 
         test_locs = self.test_locs_final
         pred_locs = self.pred_locs_final
@@ -830,7 +844,9 @@ class PopRegressor(object):
 
         return y_pred_norm
 
-    def _generate_bootstraps(self, nboots=50):
+    def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
+                             cv_splits, cv_reps, learning_rate, batch_size,
+                             dropout_prop):
 
         test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
                                         "y": [], "x_pred": [], "y_pred": []})
@@ -840,32 +856,36 @@ class PopRegressor(object):
         # Use bootstrap to randomly select sites from training/test/unknown data
         num_sites = self.data.train["alleles"].values[0].shape[0]
 
-        for _ in range(nboots):
-            site_indices = np.random.choice(range(num_sites), size=num_sites,
-                                            replace=True)
+        for _ in range(nreps): #parallelize this loop
+            for _ in range(nboots):
+                site_indices = np.random.choice(range(num_sites), size=num_sites,
+                                                replace=True)
 
-            boot_data = GeneticData()
-            boot_data.train = self.data.train.copy()
-            boot_data.test = self.data.test.copy()
-            boot_data.knowns = pd.concat([self.data.train, self.data.test])
-            boot_data.unknowns = self.data.unknowns.copy()
+                boot_data = GeneticData()
+                boot_data.train = self.data.train.copy()
+                boot_data.test = self.data.test.copy()
+                boot_data.knowns = pd.concat([self.data.train, self.data.test])
+                boot_data.unknowns = self.data.unknowns.copy()
 
-            # Slice datasets by site_indices
-            boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
-            boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
-            boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
+                # Slice datasets by site_indices
+                boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
+                boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
+                boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
 
-            # Train on new training set
-            self.train(boot_data=boot_data)
-            self.test(boot_data=boot_data)
-            test_locs = self.test_results.copy()
-            test_locs["sampleID"] = test_locs.index
-            pred_locs = self.assign_unknown(boot_data=boot_data)
+                # Train on new training set
+                self.train(epochs=epochs, valid_size=valid_size,
+                        cv_splits=cv_splits, cv_reps=cv_reps,
+                        learning_rate=learning_rate, batch_size=batch_size,
+                        dropout_prop=dropout_prop, boot_data=boot_data)
+                self.test(boot_data=boot_data)
+                test_locs = self.test_results.copy()
+                test_locs["sampleID"] = test_locs.index
+                pred_locs = self.assign_unknown(boot_data=boot_data, save=False)
 
-            test_locs_final = pd.concat([test_locs_final,
-                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-            pred_locs_final = pd.concat([pred_locs_final,
-                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+                test_locs_final = pd.concat([test_locs_final,
+                    test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+                pred_locs_final = pd.concat([pred_locs_final,
+                    pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
 
         self.test_locs_final = test_locs_final # option to save
         self.pred_locs_final = pred_locs_final # option to save

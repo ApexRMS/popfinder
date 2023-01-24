@@ -220,7 +220,7 @@ class PopClassifier(object):
 
         if save:
             self.test_results.to_csv(os.path.join(self.output_folder,
-                                     "test_results.csv"), index=False)
+                                     "classifier_test_results.csv"), index=False)
                                      
         self.__confusion_matrix = np.round(
             confusion_matrix(self.test_results["true_pop"],

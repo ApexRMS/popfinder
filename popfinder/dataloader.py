@@ -159,7 +159,7 @@ class GeneticData():
 
         return train, test
 
-    def split_kfcv(self, data=None, n_splits=5, n_reps=1, stratify_by_pop=True):
+    def split_kfcv(self, data=None, n_splits=5, n_reps=1, seed=123, stratify_by_pop=True):
         """
         Splits data into training and testing sets.
 
@@ -181,7 +181,7 @@ class GeneticData():
             of the list is n_splits * n_reps.
         """
         rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_reps,
-                                       random_state=self.seed)
+                                       random_state=seed)
         dataset_list = []
 
         if data is None:
