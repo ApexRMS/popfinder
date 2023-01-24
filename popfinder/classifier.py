@@ -191,7 +191,7 @@ class PopClassifier(object):
         self.__train_history = pd.DataFrame(loss_dict)
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self):
+    def test(self, save=True):
         """
         Tests the classification neural network.
         
@@ -216,7 +216,12 @@ class PopClassifier(object):
         y_true_pops = self.label_enc.inverse_transform(y_true)
 
         self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
-                                          "pred_pop": y_pred_pops})
+                                            "pred_pop": y_pred_pops})
+
+        if save:
+            self.test_results.to_csv(os.path.join(self.output_folder,
+                                     "test_results.csv"), index=False)
+                                     
         self.__confusion_matrix = np.round(
             confusion_matrix(self.test_results["true_pop"],
                              self.test_results["pred_pop"], 
