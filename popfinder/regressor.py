@@ -155,6 +155,10 @@ class PopRegressor(object):
     def output_folder(self):
         return self.__output_folder
 
+    @output_folder.setter
+    def output_folder(self, output_folder):
+        self.__output_folder = output_folder
+
     @property
     def train_history(self):
         return self.__train_history
@@ -881,7 +885,7 @@ class PopRegressor(object):
                     cv_splits=cv_splits, cv_reps=cv_reps,
                     learning_rate=learning_rate, batch_size=batch_size,
                     dropout_prop=dropout_prop, boot_data=boot_data)
-            self.test(boot_data=boot_data)
+            self.test(boot_data=boot_data, save=False)
             test_locs = self.test_results.copy()
             test_locs["sampleID"] = test_locs.index
             pred_locs = self.assign_unknown(boot_data=boot_data, save=False)
