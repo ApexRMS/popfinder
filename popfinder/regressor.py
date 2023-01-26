@@ -3,13 +3,17 @@ from torch.autograd import Variable
 from scipy import spatial
 from scipy import stats
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from subprocess import call
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib
 import seaborn as sns
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
 import os
+import tempfile
+
 
 from popfinder.dataloader import GeneticData
 from popfinder._neural_networks import RegressorNet
@@ -844,9 +848,9 @@ class PopRegressor(object):
 
         return y_pred_norm
 
-    def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
-                             cv_splits, cv_reps, learning_rate, batch_size,
-                             dropout_prop):
+    def _train_on_bootstraps(self, arg_list):
+
+        nboots, epochs, valid_size, cv_splits, cv_reps, learning_rate, batch_size, dropout_prop = arg_list
 
         test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
                                         "y": [], "x_pred": [], "y_pred": []})
@@ -856,39 +860,79 @@ class PopRegressor(object):
         # Use bootstrap to randomly select sites from training/test/unknown data
         num_sites = self.data.train["alleles"].values[0].shape[0]
 
-        for _ in range(nreps): #parallelize this loop
-            for _ in range(nboots):
-                site_indices = np.random.choice(range(num_sites), size=num_sites,
-                                                replace=True)
+        for _ in range(nboots):
 
-                boot_data = GeneticData()
-                boot_data.train = self.data.train.copy()
-                boot_data.test = self.data.test.copy()
-                boot_data.knowns = pd.concat([self.data.train, self.data.test])
-                boot_data.unknowns = self.data.unknowns.copy()
+            site_indices = np.random.choice(range(num_sites), size=num_sites,
+                                            replace=True)
 
-                # Slice datasets by site_indices
-                boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
-                boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
-                boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
+            boot_data = GeneticData()
+            boot_data.train = self.data.train.copy()
+            boot_data.test = self.data.test.copy()
+            boot_data.knowns = pd.concat([self.data.train, self.data.test])
+            boot_data.unknowns = self.data.unknowns.copy()
 
-                # Train on new training set
-                self.train(epochs=epochs, valid_size=valid_size,
-                        cv_splits=cv_splits, cv_reps=cv_reps,
-                        learning_rate=learning_rate, batch_size=batch_size,
-                        dropout_prop=dropout_prop, boot_data=boot_data)
-                self.test(boot_data=boot_data)
-                test_locs = self.test_results.copy()
-                test_locs["sampleID"] = test_locs.index
-                pred_locs = self.assign_unknown(boot_data=boot_data, save=False)
+            # Slice datasets by site_indices
+            boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
+            boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
+            boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
 
-                test_locs_final = pd.concat([test_locs_final,
-                    test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-                pred_locs_final = pd.concat([pred_locs_final,
-                    pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+            # Train on new training set
+            self.train(epochs=epochs, valid_size=valid_size,
+                    cv_splits=cv_splits, cv_reps=cv_reps,
+                    learning_rate=learning_rate, batch_size=batch_size,
+                    dropout_prop=dropout_prop, boot_data=boot_data)
+            self.test(boot_data=boot_data)
+            test_locs = self.test_results.copy()
+            test_locs["sampleID"] = test_locs.index
+            pred_locs = self.assign_unknown(boot_data=boot_data, save=False)
 
-        self.test_locs_final = test_locs_final # option to save
-        self.pred_locs_final = pred_locs_final # option to save
+            test_locs_final = pd.concat([test_locs_final,
+                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+            pred_locs_final = pd.concat([pred_locs_final,
+                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+
+        return test_locs_final, pred_locs_final
+
+    def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
+                             cv_splits, cv_reps, learning_rate, batch_size,
+                             dropout_prop):
+        # run multiple bootstraps in parallel using the mb script
+        # call(["python", "mb.py", "-n", str(nboots), "-r", str(nreps), "-e", str(epochs),
+        #       "-v", str(valid_size), "-s", str(cv_splits), "-c", str(cv_reps),
+        #       "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop)])
+        # Create tempfolder
+        tempfolder = tempfile.mkdtemp()
+        self.save(save_path=tempfolder)
+        call(["python", "popfinder/_multiboots.py", "-p", tempfolder])
+
+        # arg_list = [(nboots, epochs, valid_size, cv_splits, cv_reps,
+        #              learning_rate, batch_size, dropout_prop) for _ in range(nreps)]  
+
+
+        # results = self._parallelize_runs(self._train_on_bootstraps, nboots, nreps,
+        #                             epochs, valid_size, cv_splits, cv_reps,
+        #                             learning_rate, batch_size, dropout_prop)           
+
+        # self.test_locs_final = results[0]
+        # self.pred_locs_final = results[1]
+
+        #self.test_locs_final = test_locs_final # option to save
+        #self.pred_locs_final = pred_locs_final # option to save
+
+    def _parallelize_runs(self, func, nboots, nreps, epochs, valid_size,
+                          cv_splits, cv_reps, learning_rate, batch_size,
+                          dropout_prop):
+        num_processes = mp.cpu_count() - 1
+        with mp.Pool(num_processes) as pool:
+            results = pool.map(func, [(nboots, epochs, valid_size, cv_splits,
+                                       cv_reps, learning_rate, batch_size,
+                                       dropout_prop) for _ in range(nreps)])
+
+        return results
+
+    def _parallelize_func(self, df):
+        test_locs_final, pred_locs_final = self._train_on_bootstraps()
+        return df
 
     def _test_classification(self, test_locs, num_contours, save_plots):
 
