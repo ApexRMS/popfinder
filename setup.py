@@ -9,9 +9,6 @@ from popfinder._version import __version__
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-with open('requirements.txt') as f:
-    install_requires = f.read().splitlines()
-
 entry_points = \
 {'console_scripts': ['pop_classifier = popfinder.cli_classifier:main',
                      'pop_regressor = popfinder.cli_regressor:main']}
@@ -27,3 +24,7 @@ setup(name="popfinder",
       packages=find_packages(exclude="tests"),
       # install_requires=install_requires,
       entry_points=entry_points)
+
+install_requires = ["numpy", "pandas", "torch", "scikit-learn", "dill",
+                    "seaborn", "matplotlib", "scikit-allel", "zarr",
+                    "h5py", "scipy"]
