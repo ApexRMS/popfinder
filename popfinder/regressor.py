@@ -138,6 +138,7 @@ class PopRegressor(object):
         self.__classification_f1 = None
         self.__classification_confusion_matrix = None
         self.__nn_type = "regressor"
+        self.__lowest_val_loss = 9999
 
     @property
     def data(self):
@@ -227,6 +228,10 @@ class PopRegressor(object):
     def nn_type(self):
         return self.__nn_type
 
+    @property
+    def lowest_val_loss(self):
+        return self.__lowest_val_loss
+
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None):
         """
@@ -269,7 +274,6 @@ class PopRegressor(object):
 
         loss_df_final = pd.DataFrame({"rep": [], "split": [], "epoch": [],
                                       "train": [], "valid": []})
-        self.lowest_val_loss = 9999
 
         for i, input in enumerate(inputs):
 
@@ -915,20 +919,6 @@ class PopRegressor(object):
         self.test_locs_final = pd.read_csv(os.path.join(tempfolder, "test_locs_final.csv"))
         self.pred_locs_final = pd.read_csv(os.path.join(tempfolder, "pred_locs_final.csv"))      
 
-    def _parallelize_runs(self, func, nboots, nreps, epochs, valid_size,
-                          cv_splits, cv_reps, learning_rate, batch_size,
-                          dropout_prop):
-        num_processes = mp.cpu_count() - 1
-        with mp.Pool(num_processes) as pool:
-            results = pool.map(func, [(nboots, epochs, valid_size, cv_splits,
-                                       cv_reps, learning_rate, batch_size,
-                                       dropout_prop) for _ in range(nreps)])
-
-        return results
-
-    def _parallelize_func(self, df):
-        test_locs_final, pred_locs_final = self._train_on_bootstraps()
-        return df
 
     def _test_classification(self, test_locs, num_contours, save_plots):
 

@@ -132,3 +132,4 @@ dmypy.json
 testing.py
 testing_dir/
 .vscode/
+tests/test_outputs/
