@@ -7,16 +7,6 @@ import os
 from popfinder.dataloader import GeneticData
 from popfinder.regressor import PopRegressor
 
-nreps=5
-nboots=50
-epochs=100
-valid_size=0.2 
-cv_splits=1
-cv_reps=1
-learning_rate=0.001 
-batch_size=16
-dropout_prop=0.01
-
 def _train_on_bootstraps(arg_list):
 
     popfinder_path, nboots, epochs, valid_size, cv_splits, cv_reps, learning_rate, batch_size, dropout_prop, rep = arg_list
@@ -68,32 +58,37 @@ def _train_on_bootstraps(arg_list):
     return test_locs_final, pred_locs_final
 
 
-# def _parallelize_runs(self, func, nboots, nreps, epochs, valid_size,
-#                       cv_splits, cv_reps, learning_rate, batch_size,
-#                       dropout_prop):
-#     num_processes = mp.cpu_count() - 1
-#     with mp.Pool(num_processes) as pool:
-#         results = pool.map(func, [(nboots, epochs, valid_size, cv_splits,
-#                                     cv_reps, learning_rate, batch_size,
-#                                     dropout_prop) for _ in range(nreps)])
-
-    # return results
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", help="Path to PopRegressor object")
+    parser.add_argument("-n", help="Number of bootstraps", type=int)
+    parser.add_argument("-r", help="Number of repetitions", type=int)
+    parser.add_argument("-e", help="Number of epochs", type=int)
+    parser.add_argument("-v", help="Validation size", type=float)
+    parser.add_argument("-s", help="Number of cross-validation splits", type=int)
+    parser.add_argument("-c", help="Number of cross-validation repetitions", type=int)
+    parser.add_argument("-l", help="Learning rate", type=float)
+    parser.add_argument("-b", help="Batch size", type=int)
+    parser.add_argument("-d", help="Dropout proportion", type=float)
     args = parser.parse_args()
     popfinder_path = args.p
+    nboots = args.n
+    nreps = args.r
+    epochs = args.e 
+    valid_size = args.v 
+    cv_splits = args.s
+    cv_reps = args.c 
+    learning_rate = args.l 
+    batch_size = args.b
+    dropout_prop = args.d
 
-    pool = mp.Pool(processes=5) # test with 1 process
+    num_jobs = mp.cpu_count()
+    pool = mp.Pool(processes=num_jobs)
     results = pool.map(_train_on_bootstraps, [[popfinder_path, nboots, epochs, valid_size, cv_splits,
-                                    cv_reps, learning_rate, batch_size,
-                                    dropout_prop, rep] for rep in range(nreps)])
+                                               cv_reps, learning_rate, batch_size,
+                                               dropout_prop, rep] for rep in range(nreps)])
+    pool.close()
+    pool.join()
 
-    # results = [_train_on_bootstraps([popfinder_path, nboots, epochs, valid_size, cv_splits,
-    #                             cv_reps, learning_rate, batch_size,
-    #                             dropout_prop, rep]) for rep in range(nreps)]
     results.to_csv("results.csv")
-
-    final_results = pd.concat([results])

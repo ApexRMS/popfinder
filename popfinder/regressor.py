@@ -900,28 +900,24 @@ class PopRegressor(object):
     def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
                              cv_splits, cv_reps, learning_rate, batch_size,
                              dropout_prop):
-        # run multiple bootstraps in parallel using the mb script
-        # call(["python", "mb.py", "-n", str(nboots), "-r", str(nreps), "-e", str(epochs),
-        #       "-v", str(valid_size), "-s", str(cv_splits), "-c", str(cv_reps),
-        #       "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop)])
+
         # Create tempfolder
         tempfolder = tempfile.mkdtemp()
         self.save(save_path=tempfolder)
-        call(["python", "popfinder/_multiboots.py", "-p", tempfolder])
 
-        # arg_list = [(nboots, epochs, valid_size, cv_splits, cv_reps,
-        #              learning_rate, batch_size, dropout_prop) for _ in range(nreps)]  
+        # run multiple bootstraps in parallel using the mb script
+        call(["python", "popfinder/_multiboots.py", "-p", tempfolder,
+              "-n", str(nboots), "-r", str(nreps), "-e", str(epochs),
+              "-v", str(valid_size), "-s", str(cv_splits), "-c", str(cv_reps),
+              "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop)])
 
+        results = pd.read_csv("results.csv")      
 
-        # results = self._parallelize_runs(self._train_on_bootstraps, nboots, nreps,
-        #                             epochs, valid_size, cv_splits, cv_reps,
-        #                             learning_rate, batch_size, dropout_prop)           
+        self.test_locs_final = results[0]
+        self.pred_locs_final = results[1]
 
-        # self.test_locs_final = results[0]
-        # self.pred_locs_final = results[1]
-
-        #self.test_locs_final = test_locs_final # option to save
-        #self.pred_locs_final = pred_locs_final # option to save
+        # self.test_locs_final = test_locs_final # option to save
+        # self.pred_locs_final = pred_locs_final # option to save
 
     def _parallelize_runs(self, func, nboots, nreps, epochs, valid_size,
                           cv_splits, cv_reps, learning_rate, batch_size,
