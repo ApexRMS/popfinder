@@ -391,7 +391,7 @@ class PopRegressor(object):
     def classify_by_contours(self, nboots=5, nreps=5, num_contours=5,
         epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
         learning_rate=0.001, batch_size=16, dropout_prop=0, 
-        save_plots=True, save=True):
+        jobs=-1, save_plots=True, save=True):
         """
         Classifies unknown samples by kernel density estimates (contours).
         This function uses 2D kernel density estimation to create contour 
@@ -419,7 +419,7 @@ class PopRegressor(object):
 
         self._generate_bootstraps(nboots, nreps, epochs, valid_size,
                                   cv_splits, cv_reps, learning_rate, batch_size,
-                                  dropout_prop) 
+                                  dropout_prop, jobs) 
 
         test_locs = self.test_locs_final
         pred_locs = self.pred_locs_final
@@ -899,7 +899,7 @@ class PopRegressor(object):
 
     def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
                              cv_splits, cv_reps, learning_rate, batch_size,
-                             dropout_prop):
+                             dropout_prop, jobs):
 
         # Create tempfolder
         tempfolder = tempfile.mkdtemp()
@@ -909,15 +909,11 @@ class PopRegressor(object):
         call(["python", "popfinder/_multiboots.py", "-p", tempfolder,
               "-n", str(nboots), "-r", str(nreps), "-e", str(epochs),
               "-v", str(valid_size), "-s", str(cv_splits), "-c", str(cv_reps),
-              "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop)])
+              "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop),
+              "-j", str(jobs)])
 
-        results = pd.read_csv("results.csv")      
-
-        self.test_locs_final = results[0]
-        self.pred_locs_final = results[1]
-
-        # self.test_locs_final = test_locs_final # option to save
-        # self.pred_locs_final = pred_locs_final # option to save
+        self.test_locs_final = pd.read_csv(os.path.join(tempfolder, "test_locs_final.csv"))
+        self.pred_locs_final = pd.read_csv(os.path.join(tempfolder, "pred_locs_final.csv"))      
 
     def _parallelize_runs(self, func, nboots, nreps, epochs, valid_size,
                           cv_splits, cv_reps, learning_rate, batch_size,

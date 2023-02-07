@@ -71,6 +71,7 @@ if __name__ == "__main__":
     parser.add_argument("-l", help="Learning rate", type=float)
     parser.add_argument("-b", help="Batch size", type=int)
     parser.add_argument("-d", help="Dropout proportion", type=float)
+    parser.add_argument("-j", help="Number of jobs", type=int)
     args = parser.parse_args()
     popfinder_path = args.p
     nboots = args.n
@@ -82,8 +83,10 @@ if __name__ == "__main__":
     learning_rate = args.l 
     batch_size = args.b
     dropout_prop = args.d
+    num_jobs = args.j
 
-    num_jobs = mp.cpu_count()
+    if num_jobs == -1:
+        num_jobs = mp.cpu_count()
     pool = mp.Pool(processes=num_jobs)
     results = pool.map(_train_on_bootstraps, [[popfinder_path, nboots, epochs, valid_size, cv_splits,
                                                cv_reps, learning_rate, batch_size,
@@ -91,4 +94,11 @@ if __name__ == "__main__":
     pool.close()
     pool.join()
 
-    results.to_csv("results.csv")
+    test_locs_final = pd.DataFrame()
+    pred_locs_final = pd.DataFrame()
+    for rep in range(nreps):
+        test_locs_final = pd.concat([test_locs_final, results[rep][0]])
+        pred_locs_final = pd.concat([pred_locs_final, results[rep][1]])
+
+    test_locs_final.to_csv(os.path.join(popfinder_path, "test_locs_final.csv"))
+    pred_locs_final.to_csv(os.path.join(popfinder_path, "pred_locs_final.csv"))
