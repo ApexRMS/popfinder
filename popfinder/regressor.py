@@ -824,7 +824,7 @@ class PopRegressor(object):
                 valid_loss += loss.data.item()
 
                 if valid_loss < self.lowest_val_loss:
-                    self.lowest_val_loss = valid_loss
+                    self.__lowest_val_loss = valid_loss
                     torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
 
             # Calculate average validation loss
