@@ -26,6 +26,7 @@ from popfinder._visualize import _plot_assignment
 from popfinder._visualize import _plot_training_curve
 from popfinder._visualize import _plot_confusion_matrix
 from popfinder._visualize import _plot_structure
+import popfinder as pf
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -909,8 +910,12 @@ class PopRegressor(object):
         tempfolder = tempfile.mkdtemp()
         self.save(save_path=tempfolder)
 
+        # Find path to _multiboots
+        filepath = pf.__file__
+        folderpath = os.path.dirname(filepath)
+
         # run multiple bootstraps in parallel using the mb script
-        call(["python", "popfinder/_multiboots.py", "-p", tempfolder,
+        call(["python", folderpath + "/_multiboots.py", "-p", tempfolder,
               "-n", str(nboots), "-r", str(nreps), "-e", str(epochs),
               "-v", str(valid_size), "-s", str(cv_splits), "-c", str(cv_reps),
               "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop),
