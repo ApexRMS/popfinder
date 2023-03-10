@@ -89,7 +89,7 @@ class PopRegressor(object):
 
     Methods
     -------
-    train(epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None)
+    train(epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, learning_rate=0.001, batch_size=16, dropout_prop=0)
         Train the regressor.
     test()
         Test the regressor.
@@ -122,6 +122,7 @@ class PopRegressor(object):
         if output_folder is None:
             output_folder = os.getcwd()
         self.__output_folder = output_folder
+        self.__boot_data = None
         self.__train_history = None
         self.__best_model = None
         self.__test_results = None
@@ -160,6 +161,14 @@ class PopRegressor(object):
     @output_folder.setter
     def output_folder(self, output_folder):
         self.__output_folder = output_folder
+
+    @property
+    def boot_data(self):
+        return self.__boot_data
+    
+    @boot_data.setter
+    def boot_data(self, boot_data):
+        self.__boot_data = boot_data
 
     @property
     def train_history(self):
@@ -385,6 +394,35 @@ class PopRegressor(object):
                                 "regressor_assignment_results.csv"))
 
         return unknown_data
+    
+    def perform_bootstrap_regression(self, nboots=5, nreps=5,
+        epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
+        learning_rate=0.001, batch_size=16, dropout_prop=0, 
+        jobs=-1, save_plots=True, save=True):
+        """
+        Generates many predictions using bootstraps of the original data.
+
+        Parameters
+        ----------
+        nboots : int, optional
+            Number of bootstraps to perform. The default is 5.
+        nreps : int, optional
+            Number of repetitions for each bootstrap. The default is 5.
+        save_plots : bool, optional
+            Whether to save the contour plots. The default is True.
+        save : bool, optional
+            Whether to save the classification results. The default is True.
+        
+        Returns
+        -------
+        None.
+        """
+        self._generate_bootstrap_results(nboots, nreps, epochs, valid_size,
+                                  cv_splits, cv_reps, learning_rate, batch_size,
+                                  dropout_prop, jobs) 
+
+        test_locs = self.test_locs_final
+        pred_locs = self.pred_locs_final
 
     def classify_by_contours(self, nboots=5, nreps=5, num_contours=5,
         epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,

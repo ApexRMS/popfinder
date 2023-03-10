@@ -36,8 +36,8 @@ class RegressorNet(nn.Module):
         self.dropout = nn.Dropout(dropout_prop)
 
     def forward(self, x):
-        x = self.batch1(self.dropout(F.relu(self.fc1(x))))
-        x = self.batch2(self.dropout(F.relu(self.fc2(x))))
+        x = self.batch1(self.dropout(F.elu(self.fc1(x))))
+        x = self.batch2(self.dropout(F.elu(self.fc2(x))))
         x = self.fc3(x)
 
         return x
