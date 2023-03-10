@@ -28,32 +28,35 @@ def _train_on_bootstraps(arg_list):
         site_indices = np.random.choice(range(num_sites), size=num_sites,
                                         replace=True)
 
-        boot_data = GeneticData()
-        boot_data.train = popfinder.data.train.copy()
-        boot_data.test = popfinder.data.test.copy()
-        boot_data.knowns = pd.concat([popfinder.data.train, popfinder.data.test])
-        boot_data.unknowns = popfinder.data.unknowns.copy()
+        popfinder.__boot_data = GeneticData()
+        popfinder.__boot_data.train = popfinder.data.train.copy()
+        popfinder.__boot_data.test = popfinder.data.test.copy()
+        popfinder.__boot_data.knowns = pd.concat([popfinder.data.train, popfinder.data.test])
+        popfinder.__boot_data.unknowns = popfinder.data.unknowns.copy()
 
         # Slice datasets by site_indices
-        boot_data.train["alleles"] = [a[site_indices] for a in popfinder.data.train["alleles"].values]
-        boot_data.test["alleles"] = [a[site_indices] for a in popfinder.data.test["alleles"].values]
-        boot_data.unknowns["alleles"] = [a[site_indices] for a in popfinder.data.unknowns["alleles"].values]
+        popfinder.__boot_data.train["alleles"] = [a[site_indices] for a in popfinder.data.train["alleles"].values]
+        popfinder.__boot_data.test["alleles"] = [a[site_indices] for a in popfinder.data.test["alleles"].values]
+        popfinder.__boot_data.unknowns["alleles"] = [a[site_indices] for a in popfinder.data.unknowns["alleles"].values]
 
         # Train on new training set
         popfinder.data
         popfinder.train(epochs=epochs, valid_size=valid_size,
                 cv_splits=cv_splits, cv_reps=cv_reps,
                 learning_rate=learning_rate, batch_size=batch_size,
-                dropout_prop=dropout_prop, boot_data=boot_data)
-        popfinder.test(boot_data=boot_data)
+                dropout_prop=dropout_prop)
+        popfinder.test()
         test_locs = popfinder.test_results.copy()
         test_locs["sampleID"] = test_locs.index
-        pred_locs = popfinder.assign_unknown(boot_data=boot_data, save=False)
+        pred_locs = popfinder.assign_unknown(save=False)
 
         test_locs_final = pd.concat([test_locs_final,
             test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
         pred_locs_final = pd.concat([pred_locs_final,
             pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+        
+        # Reset bootstrap data
+        popfinder.__boot_data = None
 
     return test_locs_final, pred_locs_final
 

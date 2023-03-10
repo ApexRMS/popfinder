@@ -234,7 +234,7 @@ class PopRegressor(object):
         return self.__lowest_val_loss
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
-              learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None):
+              learning_rate=0.001, batch_size=16, dropout_prop=0):
         """
         Trains the regression neural network to estimate xy coordinates of 
         a sample's origin.
@@ -255,22 +255,19 @@ class PopRegressor(object):
             Batch size for the neural network. The default is 16.
         dropout_prop : float, optional
             Dropout proportion for the neural network. The default is 0.
-        boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. This argument
-            is used internally. The default is None.
             
         Returns
         -------
         None.
         """
         self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
-                            learning_rate, batch_size, dropout_prop, boot_data)
+                            learning_rate, batch_size, dropout_prop)
 
-        if boot_data is None:
+        if self.__boot_data is None:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                             cv_reps, seed=self.random_state)
         else:
-            inputs = _generate_train_inputs(boot_data, valid_size, cv_splits,
+            inputs = _generate_train_inputs(self.__boot_data, valid_size, cv_splits,
                                             cv_reps, seed=self.random_state)
 
         loss_df_final = pd.DataFrame({"rep": [], "split": [], "epoch": [],
@@ -301,14 +298,12 @@ class PopRegressor(object):
         self.__train_history = loss_df_final
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, boot_data=None, save=True, verbose=False):
+    def test(self, save=True, verbose=False):
         """
         Tests the regression neural network on the test data.
         
         Parameters
         ----------
-        boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. The default is None.
         verbose : bool, optional
             Whether to print the test results. The default is False.
 
@@ -317,10 +312,10 @@ class PopRegressor(object):
         None.
         """
         
-        if boot_data is None:
+        if self.__boot_data is None:
             test_input = self.data.test
         else:
-            test_input = boot_data.test
+            test_input = self.__boot_data.test
 
         X_test = test_input["alleles"]    
         y_test = test_input[["x", "y"]]
@@ -356,7 +351,7 @@ class PopRegressor(object):
             print(self.summary)
 
 
-    def assign_unknown(self, save=True, boot_data=None):
+    def assign_unknown(self, save=True):
         """
         Assigns unknown samples to their predicted origin.
         
@@ -364,18 +359,16 @@ class PopRegressor(object):
         ----------
         save : bool, optional
             Whether to save the results to a csv file. The default is True.
-        boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. The default is None.
         
         Returns
         -------
         None.
         """
         
-        if boot_data is None:
+        if self.__boot_data is None:
             unknown_data = self.data.unknowns
         else:
-            unknown_data = boot_data.unknowns
+            unknown_data = self.__boot_data.unknowns
 
         X_unknown = unknown_data["alleles"]
         X_unknown = _data_converter(X_unknown, None)
@@ -422,7 +415,7 @@ class PopRegressor(object):
         """
         self._validate_contour_inputs(nboots, num_contours, save_plots, save)
 
-        self._generate_bootstraps(nboots, nreps, epochs, valid_size,
+        self._generate_bootstrap_results(nboots, nreps, epochs, valid_size,
                                   cv_splits, cv_reps, learning_rate, batch_size,
                                   dropout_prop, jobs) 
 
@@ -857,52 +850,7 @@ class PopRegressor(object):
 
         return y_pred_norm
 
-    def _train_on_bootstraps(self, arg_list):
-
-        nboots, epochs, valid_size, cv_splits, cv_reps, learning_rate, batch_size, dropout_prop = arg_list
-
-        test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
-                                        "y": [], "x_pred": [], "y_pred": []})
-        pred_locs_final = pd.DataFrame({"sampleID": [], "pop": [], 
-                                        "x_pred": [], "y_pred": []})    
-
-        # Use bootstrap to randomly select sites from training/test/unknown data
-        num_sites = self.data.train["alleles"].values[0].shape[0]
-
-        for _ in range(nboots):
-
-            site_indices = np.random.choice(range(num_sites), size=num_sites,
-                                            replace=True)
-
-            boot_data = GeneticData()
-            boot_data.train = self.data.train.copy()
-            boot_data.test = self.data.test.copy()
-            boot_data.knowns = pd.concat([self.data.train, self.data.test])
-            boot_data.unknowns = self.data.unknowns.copy()
-
-            # Slice datasets by site_indices
-            boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
-            boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
-            boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
-
-            # Train on new training set
-            self.train(epochs=epochs, valid_size=valid_size,
-                    cv_splits=cv_splits, cv_reps=cv_reps,
-                    learning_rate=learning_rate, batch_size=batch_size,
-                    dropout_prop=dropout_prop, boot_data=boot_data)
-            self.test(boot_data=boot_data, save=False)
-            test_locs = self.test_results.copy()
-            test_locs["sampleID"] = test_locs.index
-            pred_locs = self.assign_unknown(boot_data=boot_data, save=False)
-
-            test_locs_final = pd.concat([test_locs_final,
-                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-            pred_locs_final = pd.concat([pred_locs_final,
-                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-
-        return test_locs_final, pred_locs_final
-
-    def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
+    def _generate_bootstrap_results(self, nboots, nreps, epochs, valid_size,
                              cv_splits, cv_reps, learning_rate, batch_size,
                              dropout_prop, jobs):
 
