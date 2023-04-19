@@ -302,7 +302,7 @@ class PopRegressor(object):
             loss_df["rep"] = rep
             loss_df["split"] = split
 
-        loss_df_final = pd.concat([loss_df_final, loss_df])
+            loss_df_final = pd.concat([loss_df_final, loss_df])
 
         self.__train_history = loss_df_final
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
@@ -1072,7 +1072,7 @@ class PopRegressor(object):
                 raise ValueError("output_folder must be a valid directory")
 
     def _validate_train_inputs(self, epochs, valid_size, cv_splits, cv_reps,
-                            learning_rate, batch_size, dropout_prop, boot_data):
+                            learning_rate, batch_size, dropout_prop):
 
         if not isinstance(epochs, int):
             raise TypeError("epochs must be an integer")
@@ -1103,10 +1103,6 @@ class PopRegressor(object):
 
         if dropout_prop > 1 or dropout_prop < 0:
             raise ValueError("dropout_prop must be between 0 and 1")
-
-        if boot_data is not None:
-            if not isinstance(boot_data, GeneticData):
-                raise TypeError("boot_data must be an instance of GeneticData")
 
     def _validate_contour_inputs(self, nboots, num_contours, save_plots, save):
             
