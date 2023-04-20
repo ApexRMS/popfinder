@@ -8,6 +8,9 @@ import os
 
 def _plot_training_curve(train_history, nn_type, output_folder, save):
 
+    g = sns.FacetGrid(train_history, col="rep", row="split", height=3, aspect=1.5)
+    g.map(sns.lineplot, "epoch", "loss", palette="Set1", lw=0.5)
+
     plt.switch_backend("agg")
     fig = plt.figure(figsize=(3, 1.5), dpi=200)
     plt.rcParams.update({"font.size": 7})

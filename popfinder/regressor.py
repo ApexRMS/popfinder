@@ -1,5 +1,6 @@
 import torch
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from scipy import spatial
 from scipy import stats
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
@@ -285,16 +286,20 @@ class PopRegressor(object):
         for i, input in enumerate(inputs):
 
             X_train, y_train, X_valid, y_valid = _split_input_regressor(input)
-            net = RegressorNet(input_size=X_train.shape[1], hidden_size=16,
+            net = RegressorNet(input_size=X_train.shape[1], hidden_size=32,
                                batch_size=batch_size, dropout_prop=dropout_prop)
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+            scheduler = ReduceLROnPlateau(optimizer, factor=0.5)
             loss_func = self._euclidean_dist_loss
+
+            y_train = torch.tensor(self._normalize_locations(y_train))
+            y_valid = torch.tensor(self._normalize_locations(y_valid))
 
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
 
             loss_df = self._fit_regressor_model(epochs, train_loader,
-                    valid_loader, net, optimizer, loss_func)
+                    valid_loader, net, optimizer, scheduler, loss_func)
 
             split = i % cv_splits + 1
             rep = int(i / cv_splits) + 1
@@ -830,9 +835,17 @@ class PopRegressor(object):
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
-                             net, optimizer, loss_func):
+                             net, optimizer, scheduler, loss_func):
 
         loss_dict = {"epoch": [], "train": [], "valid": []}
+
+        # Testing
+        # model = nn.Sequential(
+        #     nn.Linear(2, 10),
+        #     nn.ReLU(),
+        #     nn.Linear(10, 1)
+        # )
+        ####
 
         for epoch in range(epochs):
 
@@ -859,6 +872,9 @@ class PopRegressor(object):
                     self.__lowest_val_loss = valid_loss
                     torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
 
+            # Step scheduler for LR decay
+            scheduler.step(valid_loss)
+
             # Calculate average validation loss
             avg_valid_loss = valid_loss / len(valid_loader)
 
@@ -881,9 +897,18 @@ class PopRegressor(object):
 
     def _unnormalize_locations(self, y_pred):
 
-        y_pred_norm = np.array(
+        y_pred_unnorm = np.array(
             [[x[0] * self.data.sdlong + self.data.meanlong,
               x[1] * self.data.sdlat + self.data.meanlat
+            ] for x in y_pred])
+
+        return y_pred_unnorm
+    
+    def _normalize_locations(self, y_pred):
+
+        y_pred_norm = np.array(
+            [[(x[0] - self.data.meanlong) / self.data.sdlong,
+              (x[1] - self.data.meanlat) / self.data.sdlat
             ] for x in y_pred])
 
         return y_pred_norm
