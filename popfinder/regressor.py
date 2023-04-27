@@ -282,6 +282,7 @@ class PopRegressor(object):
 
         loss_df_final = pd.DataFrame({"rep": [], "split": [], "epoch": [],
                                       "train": [], "valid": []})
+        lowest_val_loss = 9999
 
         for i, input in enumerate(inputs):
 
@@ -290,16 +291,55 @@ class PopRegressor(object):
                                batch_size=batch_size, dropout_prop=dropout_prop)
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
             scheduler = ReduceLROnPlateau(optimizer, factor=0.5)
-            loss_func = self._euclidean_dist_loss
+            # loss_func = self._euclidean_dist_loss
+            loss_func = torch.nn.MSELoss()
 
             y_train = torch.tensor(self._normalize_locations(y_train))
             y_valid = torch.tensor(self._normalize_locations(y_valid))
 
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
+            loss_dict = {"epoch": [], "train": [], "valid": []}
 
-            loss_df = self._fit_regressor_model(epochs, train_loader,
-                    valid_loader, net, optimizer, scheduler, loss_func)
+            for epoch in range(epochs):
+
+                train_loss = 0
+                valid_loss = 0
+
+                for _, (data, target) in enumerate(train_loader):
+                    optimizer.zero_grad()
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().float())
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.data.item()
+            
+                # Calculate average train loss
+                avg_train_loss = train_loss / len(train_loader)
+
+                for _, (data, target) in enumerate(valid_loader):
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().long())
+                    valid_loss += loss.data.item()
+
+                    if valid_loss < lowest_val_loss:
+                        lowest_val_loss = valid_loss
+                        torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
+
+                # Step scheduler for LR decay
+                scheduler.step(valid_loss)
+
+                # Calculate average validation loss
+                avg_valid_loss = valid_loss / len(valid_loader)
+
+                loss_dict["epoch"].append(epoch)
+                loss_dict["train"].append(avg_train_loss)
+                loss_dict["valid"].append(avg_valid_loss)
+
+            loss_df = pd.DataFrame(loss_dict)
+
+            # loss_df = self._fit_regressor_model(epochs, train_loader,
+            #         valid_loader, net, optimizer, scheduler, loss_func)
 
             split = i % cv_splits + 1
             rep = int(i / cv_splits) + 1
@@ -744,6 +784,9 @@ class PopRegressor(object):
         -------
         None.
         """
+        if self.classification_test_results is None:
+            raise ValueError("No classification results to plot.")
+
         _plot_confusion_matrix(self.classification_test_results,
             self.classification_confusion_matrix,
             self.nn_type, self.output_folder, save)

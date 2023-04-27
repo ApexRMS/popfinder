@@ -47,13 +47,17 @@ def _train_on_bootstraps(arg_list):
         test_locs = popfinder.test_results.copy()
         test_locs["sampleID"] = test_locs.index
         test_locs["bootstrap"] = boot
-        pred_locs = popfinder.assign_unknown(save=False)
-        pred_locs["bootstrap"] = boot
+
+        if popfinder.data.unknowns.shape[0] > 0:
+
+            pred_locs = popfinder.assign_unknown(save=False)
+            pred_locs["bootstrap"] = boot
+            pred_locs_final = pd.concat([pred_locs_final,
+                pred_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
 
         test_locs_final = pd.concat([test_locs_final,
             test_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-        pred_locs_final = pd.concat([pred_locs_final,
-            pred_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+
         
     return test_locs_final, pred_locs_final
 
