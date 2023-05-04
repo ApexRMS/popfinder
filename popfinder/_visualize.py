@@ -8,21 +8,18 @@ import os
 
 def _plot_training_curve(train_history, nn_type, output_folder, save):
 
-    # g = sns.FacetGrid(train_history, col="rep", row="split", height=3, aspect=1.5)
-    # g.map(sns.lineplot, "epoch", "train", palette="Set1", lw=0.5)
+    plot_data = train_history.rename(columns={"valid": "validation"})
+    plot_data = pd.melt(plot_data, id_vars=["epoch", "split", "rep"], 
+            value_vars=["train", "validation"], 
+            var_name="dataset", value_name="loss")
 
-    fig = plt.figure(figsize=(3, 1.5), dpi=200)
-    plt.rcParams.update({"font.size": 7})
-    ax1 = fig.add_axes([0, 0, 1, 1])
-    ax1.plot(train_history["valid"][3:], "--", color="black",
-        lw=0.5, label="Validation Loss")
-    ax1.plot(train_history["train"][3:], "-", color="black",
-        lw=0.5, label="Training Loss")
-    ax1.set_xlabel("Epoch")
-    ax1.legend()
+    d = {'color': ['C0', 'k'], "ls" : ["-","--"]}
+    g = sns.FacetGrid(plot_data, col="split", row="rep", hue="dataset", hue_kws=d, height=2, aspect=1.5)
+    g.map(sns.lineplot, "epoch", "loss", lw=0.5)
+    g.add_legend(title="")
 
     if save:
-        fig.savefig(os.path.join(output_folder, nn_type + "_training_history.png"),
+        g.savefig(os.path.join(output_folder, nn_type + "_training_history.png"),
             bbox_inches="tight")
 
 def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
