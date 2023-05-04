@@ -33,16 +33,25 @@ class PopClassifier(object):
         if output_folder is None:
             output_folder = os.getcwd()
         self.__output_folder = output_folder
+        self.__cv_output_folder = os.path.join(output_folder, "cv_results")
+        if not os.path.exists(self.__cv_output_folder):
+            os.makedirs(self.__cv_output_folder)
         self.__label_enc = None
         self.__train_history = None
         self.__best_model = None
         self.__test_results = None # use for cm and structure plot
+        self.__cv_test_results = None
         self.__classification = None # use for assignment plot
         self.__accuracy = None
         self.__precision = None
         self.__recall = None
         self.__f1 = None
         self.__confusion_matrix = None
+        self.__cv_accuracy = None
+        self.__cv_precision = None
+        self.__cv_recall = None
+        self.__cv_f1 = None
+        self.__cv_confusion_matrix = None
         self.__nn_type = "classifier"
 
     @property
@@ -76,6 +85,10 @@ class PopClassifier(object):
     @property
     def test_results(self):
         return self.__test_results
+    
+    @property
+    def cv_test_results(self):
+        return self.__cv_test_results
 
     @property
     def classification(self):
@@ -100,6 +113,26 @@ class PopClassifier(object):
     @property
     def confusion_matrix(self):
         return self.__confusion_matrix
+
+    @property
+    def cv_accuracy(self):
+        return self.__cv_accuracy
+
+    @property
+    def cv_precision(self):
+        return self.__cv_precision
+
+    @property
+    def cv_recall(self):
+        return self.__cv_recall
+
+    @property
+    def cv_f1(self):
+        return self.__cv_f1
+    
+    @property
+    def cv_confusion_matrix(self):
+        return self.__cv_confusion_matrix
 
     @property
     def nn_type(self):
@@ -137,9 +170,13 @@ class PopClassifier(object):
         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         cv_reps, seed=self.random_state)
         loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
-        lowest_val_loss = 9999
+        lowest_val_loss_total = 9999
 
         for i, input in enumerate(inputs):
+
+            lowest_val_loss_rep = 9999
+            split = i % cv_splits + 1
+            rep = int(i / cv_splits) + 1
 
             X_train, y_train, X_valid, y_valid = _split_input_classifier(self, input)
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
@@ -172,15 +209,17 @@ class PopClassifier(object):
                     loss = loss_func(output.squeeze(), target.squeeze().long())
                     valid_loss += loss.data.item()
 
-                    if valid_loss < lowest_val_loss:
-                        lowest_val_loss = valid_loss
+                    if valid_loss < lowest_val_loss_rep:
+                        lowest_val_loss_rep = valid_loss
+                        torch.save(net, os.path.join(self.__cv_output_folder, 
+                                                     f"best_model_split{split}_rep{rep}.pt"))
+
+                    if valid_loss < lowest_val_loss_total:
+                        lowest_val_loss_total = valid_loss
                         torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
 
                 # Calculate average validation loss
                 avg_valid_loss = valid_loss / len(valid_loader)
-
-                split = i % cv_splits + 1
-                rep = int(i / cv_splits) + 1
 
                 loss_dict["rep"].append(rep)
                 loss_dict["split"].append(split)
@@ -191,14 +230,26 @@ class PopClassifier(object):
         self.__train_history = pd.DataFrame(loss_dict)
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, save=True):
+    def test(self, best_model_only=True, save=True):
         """
         Tests the classification neural network.
+
+        Parameters
+        ----------
+        best_model_only : bool, optional
+            Whether to only test the best model only. If set to False, then will use all
+            models generated from all training repeats and cross-validation splits.
+            The default is True.
+        save : bool, optional
+            Whether to save the test results to the output folder. The default is True.
         
         Returns
         -------
         None.
         """
+        # Find unique reps/splits from cross validation
+        reps = self.train_history["rep"].unique()
+        splits = self.train_history["split"].unique()
         
         test_input = self.data.test
 
@@ -208,12 +259,30 @@ class PopClassifier(object):
         y_test = self.label_enc.transform(y_test)
         X_test, y_test = _data_converter(X_test, y_test)
 
-        y_pred = self.best_model(X_test).argmax(axis=1)
         y_true = y_test.squeeze()
-
-        # revert from label encoder
-        y_pred_pops = self.label_enc.inverse_transform(y_pred)
         y_true_pops = self.label_enc.inverse_transform(y_true)
+
+        # Generate predictions for each cross validation model
+        if not best_model_only:
+            self.__cv_test_results = pd.DataFrame()
+            for rep in reps:
+                for split in splits:
+                    model = torch.load(os.path.join(
+                        self.__cv_output_folder,
+                        f"best_model_split{split}_rep{rep}.pt"))
+                    y_pred = model(X_test).argmax(axis=1)
+                    y_pred_pops = self.label_enc.inverse_transform(y_pred)
+                    cv_test_results_temp = pd.DataFrame(
+                        {"rep": rep,
+                         "split": split,
+                         "true_pop": y_true_pops,
+                         "pred_pop": y_pred_pops})
+                    self.__cv_test_results = pd.concat([self.__cv_test_results,
+                                                        cv_test_results_temp])
+
+        # Predict using the best model and revert from label encoder
+        y_pred = self.best_model(X_test).argmax(axis=1)
+        y_pred_pops = self.label_enc.inverse_transform(y_pred)
 
         self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
                                             "pred_pop": y_pred_pops})
@@ -221,7 +290,13 @@ class PopClassifier(object):
         if save:
             self.test_results.to_csv(os.path.join(self.output_folder,
                                      "classifier_test_results.csv"), index=False)
-                                     
+
+        self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only)
+                                    
+
+    def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only):
+
+        # Calculate performance metrics for best model                     
         self.__confusion_matrix = np.round(
             confusion_matrix(self.test_results["true_pop"],
                              self.test_results["pred_pop"], 
@@ -232,7 +307,22 @@ class PopClassifier(object):
         self.__recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
         self.__f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
 
-    def assign_unknown(self, save=True):
+        # Calculate ensemble performance metrics if not best model only
+        if not best_model_only:
+            y_pred_cv = self.label_enc.transform(self.cv_test_results["pred_pop"])
+            y_true_cv = self.label_enc.transform(self.cv_test_results["true_pop"])
+            self.__cv_confusion_matrix = np.round(
+                confusion_matrix(self.cv_test_results["true_pop"],
+                                 self.cv_test_results["pred_pop"], 
+                                 labels=np.unique(y_true_pops).tolist(),
+                                 normalize="true"), 3)
+            self.__cv_accuracy = np.round(accuracy_score(y_true_cv, y_pred_cv), 3)
+            self.__cv_precision = np.round(precision_score(y_true_cv, y_pred_cv, average="weighted"), 3)
+            self.__cv_recall = np.round(recall_score(y_true_cv, y_pred_cv, average="weighted"), 3)
+            self.__cv_f1 = np.round(f1_score(y_true_cv, y_pred_cv, average="weighted"), 3)
+
+
+    def assign_unknown(self, best_model_only=True, save=True):
         """
         Assigns unknown samples to populations using the trained neural network.
 
@@ -255,6 +345,25 @@ class PopClassifier(object):
         preds = self.best_model(X_unknown).argmax(axis=1)
         preds = self.label_enc.inverse_transform(preds)
         unknown_data.loc[:, "assigned_pop"] = preds
+
+        if not best_model_only:
+            # Find unique reps/splits from cross validation
+            reps = self.train_history["rep"].unique()
+            splits = self.train_history["split"].unique()
+
+            for rep in reps:
+                for split in splits:
+                    model = torch.load(os.path.join(
+                        self.__cv_output_folder,
+                        f"best_model_split{split}_rep{rep}.pt"))
+                    preds = model(X_unknown).argmax(axis=1)
+                    preds = self.label_enc.inverse_transform(preds)
+                    unknown_data.loc[:, f"assigned_pop_rep{rep}_split{split}"] = preds
+
+            # Want to retrieve the most common prediction across all reps / splits
+            # for each unknown sample - give estimate of confidence based on how
+            # many times a sample is assigned to a population
+                
 
         self.__classification = unknown_data
 
