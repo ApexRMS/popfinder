@@ -452,12 +452,17 @@ class PopClassifier(object):
             errors.append(np.round(len(num_mismatches) / len(Y), 3))
 
         max_error = np.max(errors)
-        importance = [1 - (e / max_error) for e in errors]
+
+        if max_error == 0:
+            importance = [1 for e in errors]
+        else:
+            importance = [1 - (1 - np.round(e / max_error, 3)) for e in errors]
+            
         importance_data = {"snp": snp_names, "error": errors,
                            "importance": importance}
         ranking = pd.DataFrame(importance_data).sort_values("importance",
                                                             ascending=False)
-        ranking.reset_index(inplace=True)
+        ranking.reset_index(drop=True, inplace=True)
 
         if save:
             ranking.to_csv(os.path.join(self.output_folder,
