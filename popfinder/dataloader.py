@@ -129,18 +129,23 @@ class GeneticData():
 
         return known, unknown
 
-    def split_train_test(self, data=None, stratify_by_pop=True, test_size=0.2, seed=123):
+    def split_train_test(self, data=None, stratify_by_pop=True, test_size=0.2, seed=123, bootstrap=False):
         """
         Splits data into training and testing sets.
         
         Parameters
-        ----------  
+        ----------
+        data : Pandas DataFrame
+            Contains information on corresponding sampleID and
+            genetic information. This is the output of `read_data()`.  
         stratify_by_pop : bool
             Whether to stratify the data by population. Default is True.
         test_size : float
             Proportion of data to be used for testing. Default is 0.2.
         seed : int
             Random seed for reproducibility. Default is 123.
+        bootstrap : bool
+            Whether to bootstrap the training data. Default is False.
             
         Returns
         -------
@@ -157,9 +162,12 @@ class GeneticData():
         else:
             train, test = self._random_split(data, test_size=test_size, seed=seed)
 
+        if bootstrap:
+            train = train.sample(frac=1, replace=True, random_state=seed)
+
         return train, test
 
-    def split_kfcv(self, data=None, n_splits=5, n_reps=1, seed=123, stratify_by_pop=True):
+    def split_kfcv(self, data=None, n_splits=5, n_reps=1, seed=123, stratify_by_pop=True, bootstrap=False):
         """
         Splits data into training and testing sets.
 
@@ -173,6 +181,8 @@ class GeneticData():
             Whether to stratify the data by population. Default is True.
         seed : int
             Seed for random number generator. Default is 123.
+        bootstrap : bool
+            Whether to bootstrap the training data. Default is False.
 
         Returns
         -------
@@ -195,6 +205,10 @@ class GeneticData():
                                                                  groups=known_data["pop"])):
                 train = known_data.iloc[train_ind]
                 test = known_data.iloc[test_ind]
+
+                if bootstrap:
+                    train = train.sample(frac=1, replace=True, random_state=seed)
+
                 dataset_tuple = (train, test)
                 dataset_list.append(dataset_tuple)
         else:
@@ -202,6 +216,10 @@ class GeneticData():
                                                                  known_data["pop"])):
                 train = known_data.iloc[train_ind]
                 test = known_data.iloc[test_ind]
+
+                if bootstrap:
+                    train = train.sample(frac=1, replace=True, random_state=seed)
+                    
                 dataset_tuple = (train, test)
                 dataset_list.append(dataset_tuple)
 

@@ -139,7 +139,7 @@ class PopClassifier(object):
         return self.__nn_type
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
-              learning_rate=0.001, batch_size=16, dropout_prop=0):
+              learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None):
         """
         Trains the classification neural network.
 
@@ -159,6 +159,8 @@ class PopClassifier(object):
             Batch size for the neural network. The default is 16.
         dropout_prop : float, optional
             Dropout proportion for the neural network. The default is 0.
+        bootstraps : int, optional
+            Number of bootstraps to perform. The default is None.
         
         Returns
         -------
@@ -457,7 +459,7 @@ class PopClassifier(object):
             importance = [1 for e in errors]
         else:
             importance = [1 - (1 - np.round(e / max_error, 3)) for e in errors]
-            
+
         importance_data = {"snp": snp_names, "error": errors,
                            "importance": importance}
         ranking = pd.DataFrame(importance_data).sort_values("importance",
