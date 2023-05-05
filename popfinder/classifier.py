@@ -347,6 +347,7 @@ class PopClassifier(object):
 
     def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only, bootstraps):
 
+        # TODO: Make this DRY
         # Calculate performance metrics for best model                     
         self.__confusion_matrix = np.round(
             confusion_matrix(self.test_results["true_pop"],
@@ -362,6 +363,7 @@ class PopClassifier(object):
         if not best_model_only and bootstraps is None:
             y_pred_cv = self.label_enc.transform(self.cv_test_results["pred_pop"])
             y_true_cv = self.label_enc.transform(self.cv_test_results["true_pop"])
+            # TODO: put all cross validation results in single attribute?
             self.__cv_confusion_matrix = np.round(
                 confusion_matrix(self.cv_test_results["true_pop"],
                                  self.cv_test_results["pred_pop"], 
@@ -375,6 +377,7 @@ class PopClassifier(object):
         elif not best_model_only:
             y_pred_bs = self.label_enc.transform(self.__bootstrap_test_results["pred_pop"])
             y_true_bs = self.label_enc.transform(self.__bootstrap_test_results["true_pop"])
+            # TODO: put all bootstrap results in single attribute?
             self.__bs_confusion_matrix = np.round(
                 confusion_matrix(self.__bootstrap_test_results["true_pop"],
                                  self.__bootstrap_test_results["pred_pop"], 
@@ -416,19 +419,51 @@ class PopClassifier(object):
         preds = self.label_enc.inverse_transform(preds)
         unknown_data.loc[:, "assigned_pop"] = preds
 
-        if not best_model_only:
+        if "bootstrap" in self.train_history.columns:
+            bootstraps = self.train_history["bootstrap"].unique()
+        else:
+            bootstraps = None
+
+        if not best_model_only and bootstraps is None:
             # Find unique reps/splits from cross validation
+            array = self.__assign_on_multiple_models(X_unknown, self.__cv_output_folder)
+            # reps = self.train_history["rep"].unique()
+            # splits = self.train_history["split"].unique()
+
+            # for rep in reps:
+            #     for split in splits:
+            #         model = torch.load(os.path.join(
+            #             self.__cv_output_folder,
+            #             f"best_model_split{split}_rep{rep}.pt"))
+            #         preds = model(X_unknown).argmax(axis=1)
+            #         preds = self.label_enc.inverse_transform(preds)
+            #         unknown_data.loc[:, f"assigned_pop_rep{rep}_split{split}"] = preds
+
+            # Want to retrieve the most common prediction across all reps / splits
+            # for each unknown sample - give estimate of confidence based on how
+            # many times a sample is assigned to a population
+            relevant_cols = [l for l in unknown_data.columns.tolist() if "rep" in l]
+            cv_classifications = unknown_data[relevant_cols]
+            most_common = cv_classifications.mode(axis=1)[0]
+            frequency = np.round(cv_classifications.apply(lambda x: x.value_counts().max(), axis=1) / len(relevant_cols), 3)
+            unknown_data.loc[:, "most_assigned_pop"] = most_common    
+            unknown_data.loc[:, "frequency"] = frequency
+
+        elif not best_model_only:
+            # Create empty array to fill
             reps = self.train_history["rep"].unique()
             splits = self.train_history["split"].unique()
+            array_width_total = len(bootstraps) * splits * reps
+            array = np.zeros(shape=(len(X_unknown), array_width_total))
 
-            for rep in reps:
-                for split in splits:
-                    model = torch.load(os.path.join(
-                        self.__cv_output_folder,
-                        f"best_model_split{split}_rep{rep}.pt"))
-                    preds = model(X_unknown).argmax(axis=1)
-                    preds = self.label_enc.inverse_transform(preds)
-                    unknown_data.loc[:, f"assigned_pop_rep{rep}_split{split}"] = preds
+            for bootstrap in range(bootstraps):
+                bootstrap_folder = os.path.join(
+                    self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
+                array_width_bootstrap = splits * reps
+                array_end_position = bootstrap * array_width_bootstrap
+                array_start_position = array_end_position - array_width_bootstrap
+                new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
+                array[:, array_start_position:array_end_position] = new_array
 
             # Want to retrieve the most common prediction across all reps / splits
             # for each unknown sample - give estimate of confidence based on how
@@ -448,6 +483,37 @@ class PopClassifier(object):
                                 index=False)
         
         return unknown_data
+    
+    def __assign_on_multiple_models(self, X_unknown, folder):
+        reps = self.train_history["rep"].unique()
+        splits = self.train_history["split"].unique()
+
+        # Create empty array to fill
+        array_width_total = splits * reps
+        array = np.zeros(shape=(len(X_unknown), array_width_total))
+        pos = 0
+
+        for rep in reps:
+            for split in splits:
+                model = torch.load(os.path.join(
+                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                preds = model(X_unknown).argmax(axis=1)
+                preds = self.label_enc.inverse_transform(preds)
+                array[:, pos] = preds
+                pos += 1
+
+        return array
+                # unknown_data.loc[:, f"assigned_pop_rep{rep}_split{split}"] = preds
+
+        # Want to retrieve the most common prediction across all reps / splits
+        # for each unknown sample - give estimate of confidence based on how
+        # many times a sample is assigned to a population
+        # relevant_cols = [l for l in unknown_data.columns.tolist() if "rep" in l]
+        # cv_classifications = unknown_data[relevant_cols]
+        # most_common = cv_classifications.mode(axis=1)[0]
+        # frequency = np.round(cv_classifications.apply(lambda x: x.value_counts().max(), axis=1) / len(relevant_cols), 3)
+        # unknown_data.loc[:, "most_assigned_pop"] = most_common    
+        # unknown_data.loc[:, "frequency"] = frequency
   
     # Reporting functions below
     def get_classification_summary(self, save=True):
@@ -570,9 +636,14 @@ class PopClassifier(object):
         -------
         None
         """
+        bootstraps = "bootstrap" in self.train_history.columns
+
         if best_model_only:
             _plot_confusion_matrix(self.test_results, self.confusion_matrix,
                 self.nn_type, self.output_folder, save)
+        elif bootstraps:
+            _plot_confusion_matrix(self.__bootstrap_test_results, self.__bs_confusion_matrix,
+                self.nn_type, self.__bootstrap_results, save)
         else:
             _plot_confusion_matrix(self.cv_test_results, self.cv_confusion_matrix,
                 self.nn_type, self.__cv_output_folder, save)
@@ -636,11 +707,18 @@ class PopClassifier(object):
         -------
         None
         """
+        bootstraps = "bootstrap" in self.train_history.columns
+
         if best_model_only:
             preds = pd.DataFrame(self.confusion_matrix,
                                 columns=self.label_enc.classes_,
                                 index=self.label_enc.classes_)
             folder = self.output_folder
+        elif bootstraps:
+            preds = pd.DataFrame(self.__bs_confusion_matrix,
+                                columns=self.label_enc.classes_,
+                                index=self.label_enc.classes_)
+            folder = self.__bootstrap_results
         else:
             preds = pd.DataFrame(self.cv_confusion_matrix,
                                 columns=self.label_enc.classes_,
