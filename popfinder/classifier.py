@@ -363,7 +363,12 @@ class PopClassifier(object):
             # Want to retrieve the most common prediction across all reps / splits
             # for each unknown sample - give estimate of confidence based on how
             # many times a sample is assigned to a population
-                
+            relevant_cols = [l for l in unknown_data.columns.tolist() if "rep" in l]
+            cv_classifications = unknown_data[relevant_cols]
+            most_common = cv_classifications.mode(axis=1)[0]
+            frequency = np.round(cv_classifications.apply(lambda x: x.value_counts().max(), axis=1) / len(relevant_cols), 3)
+            unknown_data.loc[:, "most_assigned_pop"] = most_common    
+            unknown_data.loc[:, "frequency"] = frequency
 
         self.__classification = unknown_data
 
