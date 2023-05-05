@@ -48,14 +48,17 @@ def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
         plt.savefig(os.path.join(output_folder, nn_type + "_confusion_matrix.png"))
 
 def _plot_assignment(e_preds, col_scheme, output_folder,
-    nn_type, save):
-
+    nn_type, save, best_model_only):
+        
     e_preds.set_index("sampleID", inplace=True)
 
     if nn_type == "regressor":
-        e_preds = pd.get_dummies(e_preds["classification"])
+        e_preds = pd.get_dummies(e_preds["classification"], dtype=float)
     elif nn_type == "classifier":
-        e_preds = pd.get_dummies(e_preds["assigned_pop"])
+        e_preds = pd.get_dummies(e_preds["assigned_pop"], dtype=float)
+
+    if not best_model_only:
+        e_preds = e_preds.reset_index().groupby("sampleID").mean()
 
     num_classes = len(e_preds.columns)
 

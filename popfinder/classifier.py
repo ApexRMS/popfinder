@@ -328,6 +328,12 @@ class PopClassifier(object):
 
         Parameters
         ----------
+        best_model_only : bool, optional
+            Whether to only assign samples to populations using the best model 
+            (lowest validation loss during training). If set to False, then will also use all
+            models generated from all training repeats and cross-validation splits to
+            identify the most commonly assigned population and the frequency of assignment
+            to this population. The default is True.
         save : bool, optional
             Whether to save the results to a csv file. The default is True.
         
@@ -476,12 +482,16 @@ class PopClassifier(object):
         _plot_training_curve(self.train_history, self.__nn_type,
             self.output_folder, save)
 
-    def plot_confusion_matrix(self, save=True):
+    def plot_confusion_matrix(self, best_model_only=True, save=True):
         """
         Plots the confusion matrix.
         
         Parameters
         ----------
+        best_model_only : bool, optional
+            Whether to create the confusion matrix from results from running the
+            best modely only or from results from running models for all splits
+            and reps. The default is True.
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
         
@@ -489,17 +499,24 @@ class PopClassifier(object):
         -------
         None
         """
+        if best_model_only:
+            _plot_confusion_matrix(self.test_results, self.confusion_matrix,
+                self.nn_type, self.output_folder, save)
+        else:
+            _plot_confusion_matrix(self.cv_test_results, self.cv_confusion_matrix,
+                self.nn_type, self.__cv_output_folder, save)
 
-        _plot_confusion_matrix(self.test_results, self.confusion_matrix,
-            self.nn_type, self.output_folder, save)
-
-    def plot_assignment(self, save=True, col_scheme="Spectral"):
+    def plot_assignment(self, best_model_only=True, save=True, col_scheme="Spectral"):
         """
         Plots the proportion of times each individual from the
         unknown data was assigned to each population.
 
         Parameters
         ----------
+        best_model_only : bool, optional
+            Whether to create the assignment plot from results from running the
+            best modely only or from results from running models for all splits
+            and reps. The default is True.
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
         col_scheme : str, optional
@@ -509,16 +526,25 @@ class PopClassifier(object):
         -------
         None
         """
-
         if self.classification is None:
             raise ValueError("No classification results to plot.")
 
-        e_preds = self.classification.copy()
+        if best_model_only:
+            e_preds = self.classification.copy()
+            folder = self.output_folder
+        else:
+            relevant_cols = [l for l in self.classification.columns.tolist() if "rep" in l]
+            cv_classifications = self.classification[relevant_cols]
+            cv_classifications.reset_index(inplace=True)
+            e_preds = pd.melt(cv_classifications, id_vars=["id"], 
+                    value_vars=relevant_cols, 
+                    value_name="assigned_pop")
+            e_preds.rename(columns={"id": "sampleID"}, inplace=True)
+            folder = self.__cv_output_folder
 
-        _plot_assignment(e_preds, col_scheme, self.output_folder,
-            self.__nn_type, save)
+        _plot_assignment(e_preds, col_scheme, folder, self.__nn_type, save, best_model_only)
 
-    def plot_structure(self, save=True, col_scheme="Spectral"):
+    def plot_structure(self, best_model_only=True, save=True, col_scheme="Spectral"):
         """
         Plots the proportion of times individuals from the
         test data were assigned to the correct population. 
@@ -526,6 +552,10 @@ class PopClassifier(object):
 
         Parameters
         ----------
+        best_model_only : bool, optional
+            Whether to create the structure plot from results from running the
+            best modely only or from results from running models for all splits
+            and reps. The default is True.
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
         col_scheme : str, optional
@@ -535,12 +565,18 @@ class PopClassifier(object):
         -------
         None
         """
-        preds = pd.DataFrame(self.confusion_matrix,
-                             columns=self.label_enc.classes_,
-                             index=self.label_enc.classes_)
+        if best_model_only:
+            preds = pd.DataFrame(self.confusion_matrix,
+                                columns=self.label_enc.classes_,
+                                index=self.label_enc.classes_)
+            folder = self.output_folder
+        else:
+            preds = pd.DataFrame(self.cv_confusion_matrix,
+                                columns=self.label_enc.classes_,
+                                index=self.label_enc.classes_)
+            folder = self.__cv_output_folder
 
-        _plot_structure(preds, col_scheme, self.__nn_type, 
-            self.output_folder, save)
+        _plot_structure(preds, col_scheme, self.__nn_type, folder, save)
 
     def save(self, save_path=None, filename="classifier.pkl"):
         """
