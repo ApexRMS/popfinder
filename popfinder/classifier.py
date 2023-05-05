@@ -168,11 +168,42 @@ class PopClassifier(object):
         """
         self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
                                     learning_rate, batch_size, dropout_prop)
+        
+        self.__lowest_val_loss_total = 9999
 
-        inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                        cv_reps, seed=self.random_state)
+        if bootstraps is not None:
+            self.__bootstrap_results = os.path.join(self.output_folder, "bootstrap_results")
+            if not os.path.exists(self.__bootstrap_results):
+                os.makedirs(self.__bootstrap_results)
+
+            loss_df = pd.DataFrame()
+
+            for i in range(bootstraps):
+                boot_folder = os.path.join(self.__bootstrap_results, f"bootstrap_{i + 1}")
+                if not os.path.exists(boot_folder):
+                    os.makedirs(boot_folder)
+
+                inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
+                                cv_reps, seed=self.random_state, bootstrap=True)
+                boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
+                                    batch_size, dropout_prop, result_folder = boot_folder)
+                
+                boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
+                boot_loss_df["bootstrap"] = i + 1
+                loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
+        else:
+            inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
+                                            cv_reps, seed=self.random_state, bootstrap=False)
+            loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
+                                                batch_size, dropout_prop, result_folder = self.__cv_output_folder)
+
+        self.__train_history = loss_df
+        self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+
+    def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
+                          dropout_prop, result_folder):
+
         loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
-        lowest_val_loss_total = 9999
 
         for i, input in enumerate(inputs):
 
@@ -213,11 +244,11 @@ class PopClassifier(object):
 
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
-                        torch.save(net, os.path.join(self.__cv_output_folder, 
+                        torch.save(net, os.path.join(result_folder, 
                                                      f"best_model_split{split}_rep{rep}.pt"))
 
-                    if valid_loss < lowest_val_loss_total:
-                        lowest_val_loss_total = valid_loss
+                    if valid_loss < self.__lowest_val_loss_total:
+                        self.__lowest_val_loss_total = valid_loss
                         torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
 
                 # Calculate average validation loss
@@ -229,8 +260,7 @@ class PopClassifier(object):
                 loss_dict["train"].append(avg_train_loss)
                 loss_dict["valid"].append(avg_valid_loss)
 
-        self.__train_history = pd.DataFrame(loss_dict)
-        self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+        return pd.DataFrame(loss_dict)
 
     def test(self, best_model_only=True, save=True):
         """
@@ -252,6 +282,11 @@ class PopClassifier(object):
         # Find unique reps/splits from cross validation
         reps = self.train_history["rep"].unique()
         splits = self.train_history["split"].unique()
+
+        if "bootstrap" in self.train_history.columns:
+            bootstraps = self.train_history["bootstrap"].unique()
+        else:
+            bootstraps = 1
         
         test_input = self.data.test
 
@@ -265,22 +300,19 @@ class PopClassifier(object):
         y_true_pops = self.label_enc.inverse_transform(y_true)
 
         # Generate predictions for each cross validation model
-        if not best_model_only:
-            self.__cv_test_results = pd.DataFrame()
-            for rep in reps:
-                for split in splits:
-                    model = torch.load(os.path.join(
-                        self.__cv_output_folder,
-                        f"best_model_split{split}_rep{rep}.pt"))
-                    y_pred = model(X_test).argmax(axis=1)
-                    y_pred_pops = self.label_enc.inverse_transform(y_pred)
-                    cv_test_results_temp = pd.DataFrame(
-                        {"rep": rep,
-                         "split": split,
-                         "true_pop": y_true_pops,
-                         "pred_pop": y_pred_pops})
-                    self.__cv_test_results = pd.concat([self.__cv_test_results,
-                                                        cv_test_results_temp])
+        if not best_model_only and bootstraps == 1:
+            self.__cv_test_results = self.__test_on_multiple_models(X_test, y_true_pops, reps, splits, 
+                                                                    self.__cv_output_folder)
+
+        elif not best_model_only and bootstraps > 1:
+            # TODO: multiprocess this
+            self.__bootstrap_test_results = pd.DataFrame()
+            for bootstrap in bootstraps:
+                bootstrap_folder = os.path.join(
+                    self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
+                boot_result = self.__test_on_multiple_models(X_test, y_true_pops, reps, splits, bootstrap_folder)
+                self.__bootstrap_test_results = pd.concat([self.__bootstrap_test_results,
+                                                    boot_result])
 
         # Predict using the best model and revert from label encoder
         y_pred = self.best_model(X_test).argmax(axis=1)
@@ -294,6 +326,23 @@ class PopClassifier(object):
                                      "classifier_test_results.csv"), index=False)
 
         self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only)
+
+
+    def __test_on_multiple_models(self, reps, splits, X_test, y_true_pops, folder):
+
+        result_df = pd.DataFrame()
+        for rep in reps:
+            for split in splits:
+                model = torch.load(os.path.join(
+                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                y_pred = model(X_test).argmax(axis=1)
+                y_pred_pops = self.label_enc.inverse_transform(y_pred)
+                cv_test_results_temp = pd.DataFrame(
+                    {"rep": rep, "split": split, 
+                     "true_pop": y_true_pops, "pred_pop": y_pred_pops})
+                result_df = pd.concat([result_df, cv_test_results_temp])
+
+        return result_df
                                     
 
     def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only):
