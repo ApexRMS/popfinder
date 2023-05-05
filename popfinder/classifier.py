@@ -457,6 +457,7 @@ class PopClassifier(object):
                            "importance": importance}
         ranking = pd.DataFrame(importance_data).sort_values("importance",
                                                             ascending=False)
+        ranking.reset_index(inplace=True)
 
         if save:
             ranking.to_csv(os.path.join(self.output_folder,
