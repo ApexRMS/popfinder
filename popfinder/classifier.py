@@ -448,7 +448,8 @@ class PopClassifier(object):
             X_temp[:, i] = np.random.choice(X_temp[:, i], X_temp.shape[0])
             X_temp = torch.from_numpy(X_temp).float()
             preds = self.best_model(X_temp).argmax(axis=1)
-            errors.append(np.sum(preds != Y_enc.argmax(axis=1)) / len(Y))
+            num_mismatches = [i for i, j in zip(preds, Y_enc.argmax(axis=1)) if i != j]
+            errors.append(np.round(len(num_mismatches) / len(Y), 3))
 
         max_error = np.max(errors)
         importance = [1 - (e / max_error) for e in errors]
