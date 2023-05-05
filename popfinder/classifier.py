@@ -286,7 +286,7 @@ class PopClassifier(object):
         if "bootstrap" in self.train_history.columns:
             bootstraps = self.train_history["bootstrap"].unique()
         else:
-            bootstraps = 1
+            bootstraps = None
         
         test_input = self.data.test
 
@@ -300,17 +300,17 @@ class PopClassifier(object):
         y_true_pops = self.label_enc.inverse_transform(y_true)
 
         # Generate predictions for each cross validation model
-        if not best_model_only and bootstraps == 1:
-            self.__cv_test_results = self.__test_on_multiple_models(X_test, y_true_pops, reps, splits, 
+        if not best_model_only and bootstraps is None:
+            self.__cv_test_results = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, 
                                                                     self.__cv_output_folder)
 
-        elif not best_model_only and bootstraps > 1:
+        elif not best_model_only:
             # TODO: multiprocess this
             self.__bootstrap_test_results = pd.DataFrame()
             for bootstrap in bootstraps:
                 bootstrap_folder = os.path.join(
                     self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
-                boot_result = self.__test_on_multiple_models(X_test, y_true_pops, reps, splits, bootstrap_folder)
+                boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
                 self.__bootstrap_test_results = pd.concat([self.__bootstrap_test_results,
                                                     boot_result])
 
@@ -325,7 +325,7 @@ class PopClassifier(object):
             self.test_results.to_csv(os.path.join(self.output_folder,
                                      "classifier_test_results.csv"), index=False)
 
-        self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only)
+        self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only, bootstraps)
 
 
     def __test_on_multiple_models(self, reps, splits, X_test, y_true_pops, folder):
@@ -345,7 +345,7 @@ class PopClassifier(object):
         return result_df
                                     
 
-    def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only):
+    def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only, bootstraps):
 
         # Calculate performance metrics for best model                     
         self.__confusion_matrix = np.round(
@@ -359,7 +359,7 @@ class PopClassifier(object):
         self.__f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
 
         # Calculate ensemble performance metrics if not best model only
-        if not best_model_only:
+        if not best_model_only and bootstraps is None:
             y_pred_cv = self.label_enc.transform(self.cv_test_results["pred_pop"])
             y_true_cv = self.label_enc.transform(self.cv_test_results["true_pop"])
             self.__cv_confusion_matrix = np.round(
@@ -371,6 +371,19 @@ class PopClassifier(object):
             self.__cv_precision = np.round(precision_score(y_true_cv, y_pred_cv, average="weighted"), 3)
             self.__cv_recall = np.round(recall_score(y_true_cv, y_pred_cv, average="weighted"), 3)
             self.__cv_f1 = np.round(f1_score(y_true_cv, y_pred_cv, average="weighted"), 3)
+
+        elif not best_model_only:
+            y_pred_bs = self.label_enc.transform(self.__bootstrap_test_results["pred_pop"])
+            y_true_bs = self.label_enc.transform(self.__bootstrap_test_results["true_pop"])
+            self.__bs_confusion_matrix = np.round(
+                confusion_matrix(self.__bootstrap_test_results["true_pop"],
+                                 self.__bootstrap_test_results["pred_pop"], 
+                                 labels=np.unique(y_true_pops).tolist(),
+                                 normalize="true"), 3)
+            self.__bs_accuracy = np.round(accuracy_score(y_true_bs, y_pred_bs), 3)
+            self.__bs_precision = np.round(precision_score(y_true_bs, y_pred_bs, average="weighted"), 3)
+            self.__bs_recall = np.round(recall_score(y_true_bs, y_pred_bs, average="weighted"), 3)
+            self.__bs_f1 = np.round(f1_score(y_true_bs, y_pred_bs, average="weighted"), 3)
 
 
     def assign_unknown(self, best_model_only=True, save=True):
