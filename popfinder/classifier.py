@@ -426,46 +426,27 @@ class PopClassifier(object):
             bootstraps = None
 
         if not best_model_only and bootstraps is None:
-
             self.__pred_array = self.__assign_on_multiple_models(
                 X_unknown, self.__cv_output_folder)
-
-            # Want to retrieve the most common prediction across all reps / splits
-            # for each unknown sample - give estimate of confidence based on how
-            # many times a sample is assigned to a population
-            most_common = np.array([Counter(sorted(row, reverse=True)).\
-                                    most_common(1)[0][0] for row in self.__pred_array])
-            most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
-            frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
-            most_common = self.label_enc.inverse_transform(most_common.astype(int))
-            unknown_data.loc[:, "most_assigned_pop"] = most_common    
-            unknown_data.loc[:, "frequency"] = frequency
+            
+            unknown_data = self.__get_most_common_preds(unknown_data)
 
         elif not best_model_only:
-            # Create empty array to fill
             reps = self.train_history["rep"].unique()
             splits = self.train_history["split"].unique()
             array_width_total = len(bootstraps) * splits.max() * reps.max()
-            array = np.zeros(shape=(len(X_unknown), array_width_total))
+            self.__pred_array = np.zeros(shape=(len(X_unknown), array_width_total))
 
-            for bootstrap in range(bootstraps):
+            for bootstrap in bootstraps:
                 bootstrap_folder = os.path.join(
                     self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
                 array_width_bootstrap = splits.max() * reps.max()
                 array_end_position = bootstrap * array_width_bootstrap
                 array_start_position = array_end_position - array_width_bootstrap
                 new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
-                array[:, array_start_position:array_end_position] = new_array
+                self.__pred_array[:, array_start_position:array_end_position] = new_array
 
-            # Want to retrieve the most common prediction across all reps / splits
-            # for each unknown sample - give estimate of confidence based on how
-            # many times a sample is assigned to a population
-            relevant_cols = [l for l in unknown_data.columns.tolist() if "rep" in l]
-            cv_classifications = unknown_data[relevant_cols]
-            most_common = cv_classifications.mode(axis=1)[0]
-            frequency = np.round(cv_classifications.apply(lambda x: x.value_counts().max(), axis=1) / len(relevant_cols), 3)
-            unknown_data.loc[:, "most_assigned_pop"] = most_common    
-            unknown_data.loc[:, "frequency"] = frequency
+            unknown_data = self.__get_most_common_preds(unknown_data)
 
         self.__classification = unknown_data
 
@@ -490,23 +471,27 @@ class PopClassifier(object):
                 model = torch.load(os.path.join(
                     folder, f"best_model_split{split}_rep{rep}.pt"))
                 preds = model(X_unknown).argmax(axis=1)
-                # preds = self.label_enc.inverse_transform(preds)
                 array[:, pos] = preds
                 pos += 1
 
         return array
-                # unknown_data.loc[:, f"assigned_pop_rep{rep}_split{split}"] = preds
 
-        # Want to retrieve the most common prediction across all reps / splits
-        # for each unknown sample - give estimate of confidence based on how
-        # many times a sample is assigned to a population
-        # relevant_cols = [l for l in unknown_data.columns.tolist() if "rep" in l]
-        # cv_classifications = unknown_data[relevant_cols]
-        # most_common = cv_classifications.mode(axis=1)[0]
-        # frequency = np.round(cv_classifications.apply(lambda x: x.value_counts().max(), axis=1) / len(relevant_cols), 3)
-        # unknown_data.loc[:, "most_assigned_pop"] = most_common    
-        # unknown_data.loc[:, "frequency"] = frequency
-  
+    def __get_most_common_preds(self, unknown_data):
+        """
+        Want to retrieve the most common prediction across all reps / splits
+        for each unknown sample - give estimate of confidence based on how
+        many times a sample is assigned to a population
+        """
+        most_common = np.array([Counter(sorted(row, reverse=True)).\
+                                most_common(1)[0][0] for row in self.__pred_array])
+        most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
+        frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
+        most_common = self.label_enc.inverse_transform(most_common.astype(int))
+        unknown_data.loc[:, "most_assigned_pop"] = most_common    
+        unknown_data.loc[:, "frequency"] = frequency
+
+        return unknown_data
+
     # Reporting functions below
     def get_classification_summary(self, save=True):
         """
