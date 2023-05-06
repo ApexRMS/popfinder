@@ -579,7 +579,7 @@ class PopClassifier(object):
         return ranking
 
     # Plotting functions below
-    def plot_training_curve(self, save=True):
+    def plot_training_curve(self, save=True, facet_by_split_rep=False):
         """
         Plots the training curve.
         
@@ -587,6 +587,11 @@ class PopClassifier(object):
         ----------
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
+        facet_by_split_rep : bool, optional
+            Whether to facet the plot by split and rep. If False and more than
+            1 split and rep have been used during training, then the training
+            plot will contain variability corresponding to the multiple runs.
+            The default is False.
             
         Returns
         -------
@@ -594,7 +599,7 @@ class PopClassifier(object):
         """
 
         _plot_training_curve(self.train_history, self.__nn_type,
-            self.output_folder, save)
+            self.output_folder, save, facet_by_split_rep)
 
     def plot_confusion_matrix(self, best_model_only=True, save=True):
         """
