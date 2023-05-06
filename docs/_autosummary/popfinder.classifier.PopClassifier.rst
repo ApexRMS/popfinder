@@ -16,6 +16,7 @@
       ~PopClassifier.__init__
       ~PopClassifier.assign_unknown
       ~PopClassifier.get_classification_summary
+      ~PopClassifier.get_confusion_matrix
       ~PopClassifier.load
       ~PopClassifier.plot_assignment
       ~PopClassifier.plot_confusion_matrix
@@ -38,6 +39,12 @@
       ~PopClassifier.best_model
       ~PopClassifier.classification
       ~PopClassifier.confusion_matrix
+      ~PopClassifier.cv_accuracy
+      ~PopClassifier.cv_confusion_matrix
+      ~PopClassifier.cv_f1
+      ~PopClassifier.cv_precision
+      ~PopClassifier.cv_recall
+      ~PopClassifier.cv_test_results
       ~PopClassifier.data
       ~PopClassifier.f1
       ~PopClassifier.label_enc

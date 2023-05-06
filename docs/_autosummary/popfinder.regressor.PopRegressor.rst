@@ -19,6 +19,7 @@
       ~PopRegressor.get_assignment_summary
       ~PopRegressor.get_classification_summary
       ~PopRegressor.load
+      ~PopRegressor.perform_bootstrap_regression
       ~PopRegressor.plot_assignment
       ~PopRegressor.plot_confusion_matrix
       ~PopRegressor.plot_contour_map
@@ -39,6 +40,7 @@
    .. autosummary::
    
       ~PopRegressor.best_model
+      ~PopRegressor.boot_data
       ~PopRegressor.classification_accuracy
       ~PopRegressor.classification_confusion_matrix
       ~PopRegressor.classification_f1
