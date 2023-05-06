@@ -10,51 +10,55 @@ from popfinder.regressor import PopRegressor
 def _train_on_bootstraps(arg_list):
 
     popfinder_path, nboots, epochs, valid_size, cv_splits, cv_reps, learning_rate, batch_size, dropout_prop, rep = arg_list
-
-    popfinder = PopRegressor.load(os.path.join(popfinder_path, "regressor.pkl"))
-    popfinder.output_folder = os.path.join(popfinder_path, "rep{}".format(rep))
-    os.makedirs(popfinder.output_folder, exist_ok=True)
-
-    test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
+    test_locs_final = pd.DataFrame({"bootstrap": [], "sampleID": [], "pop": [], "x": [],
                                     "y": [], "x_pred": [], "y_pred": []})
-    pred_locs_final = pd.DataFrame({"sampleID": [], "pop": [], 
-                                    "x_pred": [], "y_pred": []})    
+    pred_locs_final = pd.DataFrame({"bootstrap": [], "sampleID": [], "pop": [], 
+                                    "x_pred": [], "y_pred": []})   
+    for boot in range(nboots):
 
-    # Use bootstrap to randomly select sites from training/test/unknown data
-    num_sites = popfinder.data.train["alleles"].values[0].shape[0]
+        popfinder = PopRegressor.load(os.path.join(popfinder_path, "regressor.pkl"))
+        popfinder.output_folder = os.path.join(popfinder_path, "rep{}".format(rep))
+        os.makedirs(popfinder.output_folder, exist_ok=True)
 
-    for _ in range(nboots):
+        # Use bootstrap to randomly select sites from training/test/unknown data
+        num_sites = popfinder.data.train["alleles"].values[0].shape[0]
 
         site_indices = np.random.choice(range(num_sites), size=num_sites,
                                         replace=True)
 
-        boot_data = GeneticData()
-        boot_data.train = popfinder.data.train.copy()
-        boot_data.test = popfinder.data.test.copy()
-        boot_data.knowns = pd.concat([popfinder.data.train, popfinder.data.test])
-        boot_data.unknowns = popfinder.data.unknowns.copy()
+        popfinder.__boot_data = GeneticData()
+        popfinder.__boot_data.train = popfinder.data.train.copy()
+        popfinder.__boot_data.test = popfinder.data.test.copy()
+        popfinder.__boot_data.knowns = pd.concat([popfinder.data.train, popfinder.data.test])
+        popfinder.__boot_data.unknowns = popfinder.data.unknowns.copy()
 
         # Slice datasets by site_indices
-        boot_data.train["alleles"] = [a[site_indices] for a in popfinder.data.train["alleles"].values]
-        boot_data.test["alleles"] = [a[site_indices] for a in popfinder.data.test["alleles"].values]
-        boot_data.unknowns["alleles"] = [a[site_indices] for a in popfinder.data.unknowns["alleles"].values]
+        popfinder.__boot_data.train["alleles"] = [a[site_indices] for a in popfinder.data.train["alleles"].values]
+        popfinder.__boot_data.test["alleles"] = [a[site_indices] for a in popfinder.data.test["alleles"].values]
+        popfinder.__boot_data.unknowns["alleles"] = [a[site_indices] for a in popfinder.data.unknowns["alleles"].values]
 
         # Train on new training set
         popfinder.data
         popfinder.train(epochs=epochs, valid_size=valid_size,
                 cv_splits=cv_splits, cv_reps=cv_reps,
                 learning_rate=learning_rate, batch_size=batch_size,
-                dropout_prop=dropout_prop, boot_data=boot_data)
-        popfinder.test(boot_data=boot_data)
+                dropout_prop=dropout_prop)
+        popfinder.test()
         test_locs = popfinder.test_results.copy()
         test_locs["sampleID"] = test_locs.index
-        pred_locs = popfinder.assign_unknown(boot_data=boot_data, save=False)
+        test_locs["bootstrap"] = boot
+
+        if popfinder.data.unknowns.shape[0] > 0:
+
+            pred_locs = popfinder.assign_unknown(save=False)
+            pred_locs["bootstrap"] = boot
+            pred_locs_final = pd.concat([pred_locs_final,
+                pred_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
 
         test_locs_final = pd.concat([test_locs_final,
-            test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-        pred_locs_final = pd.concat([pred_locs_final,
-            pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+            test_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
 
+        
     return test_locs_final, pred_locs_final
 
 
@@ -97,8 +101,12 @@ if __name__ == "__main__":
     test_locs_final = pd.DataFrame()
     pred_locs_final = pd.DataFrame()
     for rep in range(nreps):
-        test_locs_final = pd.concat([test_locs_final, results[rep][0]])
-        pred_locs_final = pd.concat([pred_locs_final, results[rep][1]])
+        test_locs = results[rep][0]
+        pred_locs = results[rep][1]
+        test_locs["rep"] = rep
+        pred_locs["rep"] = rep
+        test_locs_final = pd.concat([test_locs_final, test_locs])
+        pred_locs_final = pd.concat([pred_locs_final, pred_locs])
 
-    test_locs_final.to_csv(os.path.join(popfinder_path, "test_locs_final.csv"))
-    pred_locs_final.to_csv(os.path.join(popfinder_path, "pred_locs_final.csv"))
+    test_locs_final.to_csv(os.path.join(popfinder_path, "test_locs_final.csv"), index=False)
+    pred_locs_final.to_csv(os.path.join(popfinder_path, "pred_locs_final.csv"), index=False)

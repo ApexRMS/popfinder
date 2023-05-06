@@ -1,5 +1,6 @@
 import torch
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from scipy import spatial
 from scipy import stats
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
@@ -89,7 +90,7 @@ class PopRegressor(object):
 
     Methods
     -------
-    train(epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None)
+    train(epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1, learning_rate=0.001, batch_size=16, dropout_prop=0)
         Train the regressor.
     test()
         Test the regressor.
@@ -122,6 +123,7 @@ class PopRegressor(object):
         if output_folder is None:
             output_folder = os.getcwd()
         self.__output_folder = output_folder
+        self.__boot_data = None
         self.__train_history = None
         self.__best_model = None
         self.__test_results = None
@@ -160,6 +162,14 @@ class PopRegressor(object):
     @output_folder.setter
     def output_folder(self, output_folder):
         self.__output_folder = output_folder
+
+    @property
+    def boot_data(self):
+        return self.__boot_data
+    
+    @boot_data.setter
+    def boot_data(self, boot_data):
+        self.__boot_data = boot_data
 
     @property
     def train_history(self):
@@ -234,7 +244,7 @@ class PopRegressor(object):
         return self.__lowest_val_loss
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
-              learning_rate=0.001, batch_size=16, dropout_prop=0, boot_data=None):
+              learning_rate=0.001, batch_size=16, dropout_prop=0):
         """
         Trains the regression neural network to estimate xy coordinates of 
         a sample's origin.
@@ -255,40 +265,81 @@ class PopRegressor(object):
             Batch size for the neural network. The default is 16.
         dropout_prop : float, optional
             Dropout proportion for the neural network. The default is 0.
-        boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. This argument
-            is used internally. The default is None.
             
         Returns
         -------
         None.
         """
         self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
-                            learning_rate, batch_size, dropout_prop, boot_data)
+                            learning_rate, batch_size, dropout_prop)
 
-        if boot_data is None:
+        if self.__boot_data is None:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                             cv_reps, seed=self.random_state)
         else:
-            inputs = _generate_train_inputs(boot_data, valid_size, cv_splits,
+            inputs = _generate_train_inputs(self.__boot_data, valid_size, cv_splits,
                                             cv_reps, seed=self.random_state)
 
         loss_df_final = pd.DataFrame({"rep": [], "split": [], "epoch": [],
                                       "train": [], "valid": []})
+        lowest_val_loss = 9999
 
         for i, input in enumerate(inputs):
 
             X_train, y_train, X_valid, y_valid = _split_input_regressor(input)
-            net = RegressorNet(input_size=X_train.shape[1], hidden_size=16,
+            net = RegressorNet(input_size=X_train.shape[1], hidden_size=32,
                                batch_size=batch_size, dropout_prop=dropout_prop)
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-            loss_func = self._euclidean_dist_loss
+            scheduler = ReduceLROnPlateau(optimizer, factor=0.5)
+            # loss_func = self._euclidean_dist_loss
+            loss_func = torch.nn.MSELoss()
+
+            y_train = torch.tensor(self._normalize_locations(y_train))
+            y_valid = torch.tensor(self._normalize_locations(y_valid))
 
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
+            loss_dict = {"epoch": [], "train": [], "valid": []}
 
-            loss_df = self._fit_regressor_model(epochs, train_loader,
-                    valid_loader, net, optimizer, loss_func)
+            for epoch in range(epochs):
+
+                train_loss = 0
+                valid_loss = 0
+
+                for _, (data, target) in enumerate(train_loader):
+                    optimizer.zero_grad()
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().float())
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.data.item()
+            
+                # Calculate average train loss
+                avg_train_loss = train_loss / len(train_loader)
+
+                for _, (data, target) in enumerate(valid_loader):
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().long())
+                    valid_loss += loss.data.item()
+
+                    if valid_loss < lowest_val_loss:
+                        lowest_val_loss = valid_loss
+                        torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
+
+                # Step scheduler for LR decay
+                scheduler.step(valid_loss)
+
+                # Calculate average validation loss
+                avg_valid_loss = valid_loss / len(valid_loader)
+
+                loss_dict["epoch"].append(epoch)
+                loss_dict["train"].append(avg_train_loss)
+                loss_dict["valid"].append(avg_valid_loss)
+
+            loss_df = pd.DataFrame(loss_dict)
+
+            # loss_df = self._fit_regressor_model(epochs, train_loader,
+            #         valid_loader, net, optimizer, scheduler, loss_func)
 
             split = i % cv_splits + 1
             rep = int(i / cv_splits) + 1
@@ -296,19 +347,17 @@ class PopRegressor(object):
             loss_df["rep"] = rep
             loss_df["split"] = split
 
-        loss_df_final = pd.concat([loss_df_final, loss_df])
+            loss_df_final = pd.concat([loss_df_final, loss_df])
 
         self.__train_history = loss_df_final
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def test(self, boot_data=None, save=True, verbose=False):
+    def test(self, save=True, verbose=False):
         """
         Tests the regression neural network on the test data.
         
         Parameters
         ----------
-        boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. The default is None.
         verbose : bool, optional
             Whether to print the test results. The default is False.
 
@@ -317,10 +366,10 @@ class PopRegressor(object):
         None.
         """
         
-        if boot_data is None:
+        if self.__boot_data is None:
             test_input = self.data.test
         else:
-            test_input = boot_data.test
+            test_input = self.__boot_data.test
 
         X_test = test_input["alleles"]    
         y_test = test_input[["x", "y"]]
@@ -356,7 +405,7 @@ class PopRegressor(object):
             print(self.summary)
 
 
-    def assign_unknown(self, save=True, boot_data=None):
+    def assign_unknown(self, save=True):
         """
         Assigns unknown samples to their predicted origin.
         
@@ -364,18 +413,16 @@ class PopRegressor(object):
         ----------
         save : bool, optional
             Whether to save the results to a csv file. The default is True.
-        boot_data : GeneticData, optional
-            GeneticData object to use for bootstrapping. The default is None.
         
         Returns
         -------
         None.
         """
         
-        if boot_data is None:
+        if self.__boot_data is None:
             unknown_data = self.data.unknowns
         else:
-            unknown_data = boot_data.unknowns
+            unknown_data = self.__boot_data.unknowns
 
         X_unknown = unknown_data["alleles"]
         X_unknown = _data_converter(X_unknown, None)
@@ -392,6 +439,35 @@ class PopRegressor(object):
                                 "regressor_assignment_results.csv"))
 
         return unknown_data
+    
+    def perform_bootstrap_regression(self, nboots=5, nreps=5,
+        epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
+        learning_rate=0.001, batch_size=16, dropout_prop=0, 
+        jobs=-1, save_plots=True, save=True):
+        """
+        Generates many predictions using bootstraps of the original data.
+
+        Parameters
+        ----------
+        nboots : int, optional
+            Number of bootstraps to perform. The default is 5.
+        nreps : int, optional
+            Number of repetitions for each bootstrap. The default is 5.
+        save_plots : bool, optional
+            Whether to save the contour plots. The default is True.
+        save : bool, optional
+            Whether to save the classification results. The default is True.
+        
+        Returns
+        -------
+        None.
+        """
+        self._generate_bootstrap_results(nboots, nreps, epochs, valid_size,
+                                  cv_splits, cv_reps, learning_rate, batch_size,
+                                  dropout_prop, jobs) 
+
+        test_locs = self.test_locs_final
+        pred_locs = self.pred_locs_final
 
     def classify_by_contours(self, nboots=5, nreps=5, num_contours=5,
         epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
@@ -422,7 +498,7 @@ class PopRegressor(object):
         """
         self._validate_contour_inputs(nboots, num_contours, save_plots, save)
 
-        self._generate_bootstraps(nboots, nreps, epochs, valid_size,
+        self._generate_bootstrap_results(nboots, nreps, epochs, valid_size,
                                   cv_splits, cv_reps, learning_rate, batch_size,
                                   dropout_prop, jobs) 
 
@@ -708,6 +784,9 @@ class PopRegressor(object):
         -------
         None.
         """
+        if self.classification_test_results is None:
+            raise ValueError("No classification results to plot.")
+
         _plot_confusion_matrix(self.classification_test_results,
             self.classification_confusion_matrix,
             self.nn_type, self.output_folder, save)
@@ -799,9 +878,17 @@ class PopRegressor(object):
 
     # Hidden functions below
     def _fit_regressor_model(self, epochs, train_loader, valid_loader, 
-                             net, optimizer, loss_func):
+                             net, optimizer, scheduler, loss_func):
 
         loss_dict = {"epoch": [], "train": [], "valid": []}
+
+        # Testing
+        # model = nn.Sequential(
+        #     nn.Linear(2, 10),
+        #     nn.ReLU(),
+        #     nn.Linear(10, 1)
+        # )
+        ####
 
         for epoch in range(epochs):
 
@@ -828,6 +915,9 @@ class PopRegressor(object):
                     self.__lowest_val_loss = valid_loss
                     torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
 
+            # Step scheduler for LR decay
+            scheduler.step(valid_loss)
+
             # Calculate average validation loss
             avg_valid_loss = valid_loss / len(valid_loader)
 
@@ -850,59 +940,23 @@ class PopRegressor(object):
 
     def _unnormalize_locations(self, y_pred):
 
-        y_pred_norm = np.array(
+        y_pred_unnorm = np.array(
             [[x[0] * self.data.sdlong + self.data.meanlong,
               x[1] * self.data.sdlat + self.data.meanlat
             ] for x in y_pred])
 
+        return y_pred_unnorm
+    
+    def _normalize_locations(self, y_pred):
+
+        y_pred_norm = np.array(
+            [[(x[0] - self.data.meanlong) / self.data.sdlong,
+              (x[1] - self.data.meanlat) / self.data.sdlat
+            ] for x in y_pred])
+
         return y_pred_norm
 
-    def _train_on_bootstraps(self, arg_list):
-
-        nboots, epochs, valid_size, cv_splits, cv_reps, learning_rate, batch_size, dropout_prop = arg_list
-
-        test_locs_final = pd.DataFrame({"sampleID": [], "pop": [], "x": [],
-                                        "y": [], "x_pred": [], "y_pred": []})
-        pred_locs_final = pd.DataFrame({"sampleID": [], "pop": [], 
-                                        "x_pred": [], "y_pred": []})    
-
-        # Use bootstrap to randomly select sites from training/test/unknown data
-        num_sites = self.data.train["alleles"].values[0].shape[0]
-
-        for _ in range(nboots):
-
-            site_indices = np.random.choice(range(num_sites), size=num_sites,
-                                            replace=True)
-
-            boot_data = GeneticData()
-            boot_data.train = self.data.train.copy()
-            boot_data.test = self.data.test.copy()
-            boot_data.knowns = pd.concat([self.data.train, self.data.test])
-            boot_data.unknowns = self.data.unknowns.copy()
-
-            # Slice datasets by site_indices
-            boot_data.train["alleles"] = [a[site_indices] for a in self.data.train["alleles"].values]
-            boot_data.test["alleles"] = [a[site_indices] for a in self.data.test["alleles"].values]
-            boot_data.unknowns["alleles"] = [a[site_indices] for a in self.data.unknowns["alleles"].values]
-
-            # Train on new training set
-            self.train(epochs=epochs, valid_size=valid_size,
-                    cv_splits=cv_splits, cv_reps=cv_reps,
-                    learning_rate=learning_rate, batch_size=batch_size,
-                    dropout_prop=dropout_prop, boot_data=boot_data)
-            self.test(boot_data=boot_data, save=False)
-            test_locs = self.test_results.copy()
-            test_locs["sampleID"] = test_locs.index
-            pred_locs = self.assign_unknown(boot_data=boot_data, save=False)
-
-            test_locs_final = pd.concat([test_locs_final,
-                test_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-            pred_locs_final = pd.concat([pred_locs_final,
-                pred_locs[["sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-
-        return test_locs_final, pred_locs_final
-
-    def _generate_bootstraps(self, nboots, nreps, epochs, valid_size,
+    def _generate_bootstrap_results(self, nboots, nreps, epochs, valid_size,
                              cv_splits, cv_reps, learning_rate, batch_size,
                              dropout_prop, jobs):
 
@@ -1086,7 +1140,7 @@ class PopRegressor(object):
                 raise ValueError("output_folder must be a valid directory")
 
     def _validate_train_inputs(self, epochs, valid_size, cv_splits, cv_reps,
-                            learning_rate, batch_size, dropout_prop, boot_data):
+                            learning_rate, batch_size, dropout_prop):
 
         if not isinstance(epochs, int):
             raise TypeError("epochs must be an integer")
@@ -1117,10 +1171,6 @@ class PopRegressor(object):
 
         if dropout_prop > 1 or dropout_prop < 0:
             raise ValueError("dropout_prop must be between 0 and 1")
-
-        if boot_data is not None:
-            if not isinstance(boot_data, GeneticData):
-                raise TypeError("boot_data must be an instance of GeneticData")
 
     def _validate_contour_inputs(self, nboots, num_contours, save_plots, save):
             

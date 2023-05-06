@@ -6,21 +6,26 @@ import numpy as np
 import itertools
 import os
 
-def _plot_training_curve(train_history, nn_type, output_folder, save):
+def _plot_training_curve(train_history, nn_type, output_folder, save, facet_by_split_rep):
 
-    plt.switch_backend("agg")
-    fig = plt.figure(figsize=(3, 1.5), dpi=200)
-    plt.rcParams.update({"font.size": 7})
-    ax1 = fig.add_axes([0, 0, 1, 1])
-    ax1.plot(train_history["valid"][3:], "--", color="black",
-        lw=0.5, label="Validation Loss")
-    ax1.plot(train_history["train"][3:], "-", color="black",
-        lw=0.5, label="Training Loss")
-    ax1.set_xlabel("Epoch")
-    ax1.legend()
+    plot_data = train_history.rename(columns={"valid": "validation"})
+    plot_data = pd.melt(plot_data, id_vars=["epoch", "split", "rep"], 
+            value_vars=["train", "validation"], 
+            var_name="dataset", value_name="loss")
+
+    d = {'color': ['C0', 'k'], "ls" : ["-","--"]}
+
+    if facet_by_split_rep:
+        g = sns.FacetGrid(plot_data, col="split", row="rep", 
+                          hue="dataset", hue_kws=d, height=2, aspect=1.5)
+    else:
+        g = sns.FacetGrid(plot_data, hue="dataset", hue_kws=d, height=2, aspect=1.5)
+    
+    g.map(sns.lineplot, "epoch", "loss", lw=0.5)
+    g.add_legend(title="")
 
     if save:
-        fig.savefig(os.path.join(output_folder, nn_type + "_training_history.png"),
+        g.savefig(os.path.join(output_folder, nn_type + "_training_history.png"),
             bbox_inches="tight")
 
 def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
@@ -49,14 +54,17 @@ def _plot_confusion_matrix(test_results, confusion_matrix, nn_type,
         plt.savefig(os.path.join(output_folder, nn_type + "_confusion_matrix.png"))
 
 def _plot_assignment(e_preds, col_scheme, output_folder,
-    nn_type, save):
-
+    nn_type, save, best_model_only):
+        
     e_preds.set_index("sampleID", inplace=True)
 
     if nn_type == "regressor":
-        e_preds = pd.get_dummies(e_preds["classification"])
+        e_preds = pd.get_dummies(e_preds["classification"], dtype=float)
     elif nn_type == "classifier":
-        e_preds = pd.get_dummies(e_preds["assigned_pop"])
+        e_preds = pd.get_dummies(e_preds["assigned_pop"], dtype=float)
+
+    if not best_model_only:
+        e_preds = e_preds.reset_index().groupby("sampleID").mean()
 
     num_classes = len(e_preds.columns)
 

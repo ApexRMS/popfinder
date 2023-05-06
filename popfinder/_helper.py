@@ -6,14 +6,16 @@ import numpy as np
 import dill
 import os
 
-def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123):
+def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123, bootstrap=False):
 
     if cv_splits == 1:
-        train_input, valid_input = data_obj.split_train_test(data_obj.train, test_size=valid_size, seed=seed)
+        train_input, valid_input = data_obj.split_train_test(
+            data_obj.train, test_size=valid_size, seed=seed, bootstrap=bootstrap)
         inputs = [(train_input, valid_input)]
 
     elif cv_splits > 1:
-        inputs = data_obj.split_kfcv(data_obj.train, n_splits=cv_splits, n_reps=cv_reps, seed=seed)
+        inputs = data_obj.split_kfcv(
+            data_obj.train, n_splits=cv_splits, n_reps=cv_reps, seed=seed, bootstrap=bootstrap)
 
     return inputs
 
@@ -55,7 +57,7 @@ def _generate_data_loaders(X_train, y_train, X_valid, y_valid, batch_size=16):
     train = TensorDataset(X_train, y_train)
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
     valid = TensorDataset(X_valid, y_valid)
-    valid_loader = DataLoader(valid, batch_size=batch_size, shuffle=True)
+    valid_loader = DataLoader(valid, batch_size=len(valid.tensors[0]), shuffle=True)
 
     return train_loader, valid_loader
 
