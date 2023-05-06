@@ -201,68 +201,6 @@ class PopClassifier(object):
         self.__train_history = loss_df
         self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
 
-    def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
-                          dropout_prop, result_folder):
-
-        loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
-
-        for i, input in enumerate(inputs):
-
-            lowest_val_loss_rep = 9999
-            split = i % cv_splits + 1
-            rep = int(i / cv_splits) + 1
-
-            X_train, y_train, X_valid, y_valid = _split_input_classifier(self, input)
-            train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
-                                                                X_valid, y_valid)
-
-            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16,
-                                output_size=len(y_train.unique()),
-                                batch_size=batch_size, dropout_prop=dropout_prop)
-            optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-            loss_func = nn.CrossEntropyLoss()
-
-            for epoch in range(epochs):
-
-                train_loss = 0
-                valid_loss = 0
-
-                for _, (data, target) in enumerate(train_loader):
-                    optimizer.zero_grad()
-                    output = net(data)
-                    loss = loss_func(output.squeeze(), target.squeeze().long())
-                    loss.backward()
-                    optimizer.step()
-                    train_loss += loss.data.item()
-            
-                # Calculate average train loss
-                avg_train_loss = train_loss / len(train_loader)
-
-                for _, (data, target) in enumerate(valid_loader):
-                    output = net(data)
-                    loss = loss_func(output.squeeze(), target.squeeze().long())
-                    valid_loss += loss.data.item()
-
-                    if valid_loss < lowest_val_loss_rep:
-                        lowest_val_loss_rep = valid_loss
-                        torch.save(net, os.path.join(result_folder, 
-                                                     f"best_model_split{split}_rep{rep}.pt"))
-
-                    if valid_loss < self.__lowest_val_loss_total:
-                        self.__lowest_val_loss_total = valid_loss
-                        torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
-
-                # Calculate average validation loss
-                avg_valid_loss = valid_loss / len(valid_loader)
-
-                loss_dict["rep"].append(rep)
-                loss_dict["split"].append(split)
-                loss_dict["epoch"].append(epoch)
-                loss_dict["train"].append(avg_train_loss)
-                loss_dict["valid"].append(avg_valid_loss)
-
-        return pd.DataFrame(loss_dict)
-
     def test(self, best_model_only=True, save=True):
         """
         Tests the classification neural network.
@@ -327,67 +265,6 @@ class PopClassifier(object):
                                      "classifier_test_results.csv"), index=False)
 
         self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only, bootstraps)
-
-
-    def __test_on_multiple_models(self, reps, splits, X_test, y_true_pops, folder):
-
-        result_df = pd.DataFrame()
-        for rep in reps:
-            for split in splits:
-                model = torch.load(os.path.join(
-                    folder, f"best_model_split{split}_rep{rep}.pt"))
-                y_pred = model(X_test).argmax(axis=1)
-                y_pred_pops = self.label_enc.inverse_transform(y_pred)
-                cv_test_results_temp = pd.DataFrame(
-                    {"rep": rep, "split": split, 
-                     "true_pop": y_true_pops, "pred_pop": y_pred_pops})
-                result_df = pd.concat([result_df, cv_test_results_temp])
-
-        return result_df
-                                    
-
-    def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only, bootstraps):
-
-        # TODO: Make this DRY
-        # Calculate performance metrics for best model                     
-        self.__confusion_matrix = np.round(
-            confusion_matrix(self.test_results["true_pop"],
-                             self.test_results["pred_pop"], 
-                             labels=np.unique(y_true_pops).tolist(),
-                             normalize="true"), 3)
-        self.__accuracy = np.round(accuracy_score(y_true, y_pred), 3)
-        self.__precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
-        self.__recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
-        self.__f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
-
-        # Calculate ensemble performance metrics if not best model only
-        if not best_model_only and bootstraps is None:
-            y_pred_cv = self.label_enc.transform(self.cv_test_results["pred_pop"])
-            y_true_cv = self.label_enc.transform(self.cv_test_results["true_pop"])
-            # TODO: put all cross validation results in single attribute?
-            self.__cv_confusion_matrix = np.round(
-                confusion_matrix(self.cv_test_results["true_pop"],
-                                 self.cv_test_results["pred_pop"], 
-                                 labels=np.unique(y_true_pops).tolist(),
-                                 normalize="true"), 3)
-            self.__cv_accuracy = np.round(accuracy_score(y_true_cv, y_pred_cv), 3)
-            self.__cv_precision = np.round(precision_score(y_true_cv, y_pred_cv, average="weighted"), 3)
-            self.__cv_recall = np.round(recall_score(y_true_cv, y_pred_cv, average="weighted"), 3)
-            self.__cv_f1 = np.round(f1_score(y_true_cv, y_pred_cv, average="weighted"), 3)
-
-        elif not best_model_only:
-            y_pred_bs = self.label_enc.transform(self.__bootstrap_test_results["pred_pop"])
-            y_true_bs = self.label_enc.transform(self.__bootstrap_test_results["true_pop"])
-            # TODO: put all bootstrap results in single attribute?
-            self.__bs_confusion_matrix = np.round(
-                confusion_matrix(self.__bootstrap_test_results["true_pop"],
-                                 self.__bootstrap_test_results["pred_pop"], 
-                                 labels=np.unique(y_true_pops).tolist(),
-                                 normalize="true"), 3)
-            self.__bs_accuracy = np.round(accuracy_score(y_true_bs, y_pred_bs), 3)
-            self.__bs_precision = np.round(precision_score(y_true_bs, y_pred_bs, average="weighted"), 3)
-            self.__bs_recall = np.round(recall_score(y_true_bs, y_pred_bs, average="weighted"), 3)
-            self.__bs_f1 = np.round(f1_score(y_true_bs, y_pred_bs, average="weighted"), 3)
 
 
     def assign_unknown(self, best_model_only=True, save=True):
@@ -456,46 +333,12 @@ class PopClassifier(object):
                                 index=False)
         
         return unknown_data
-    
-    def __assign_on_multiple_models(self, X_unknown, folder):
-        reps = self.train_history["rep"].unique()
-        splits = self.train_history["split"].unique()
-
-        # Create empty array to fill
-        array_width_total = splits.max() * reps.max()
-        array = np.zeros(shape=(len(X_unknown), array_width_total))
-        pos = 0
-
-        for rep in reps:
-            for split in splits:
-                model = torch.load(os.path.join(
-                    folder, f"best_model_split{split}_rep{rep}.pt"))
-                preds = model(X_unknown).argmax(axis=1)
-                array[:, pos] = preds
-                pos += 1
-
-        return array
-
-    def __get_most_common_preds(self, unknown_data):
-        """
-        Want to retrieve the most common prediction across all reps / splits
-        for each unknown sample - give estimate of confidence based on how
-        many times a sample is assigned to a population
-        """
-        most_common = np.array([Counter(sorted(row, reverse=True)).\
-                                most_common(1)[0][0] for row in self.__pred_array])
-        most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
-        frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
-        most_common = self.label_enc.inverse_transform(most_common.astype(int))
-        unknown_data.loc[:, "most_assigned_pop"] = most_common    
-        unknown_data.loc[:, "frequency"] = frequency
-
-        return unknown_data
 
     # Reporting functions below
     def get_classification_summary(self, save=True):
         """
-        Get a summary of the classification results.
+        Get a summary of the classification performance metrics, including
+        accuracy, precision, recall, and f1 score.
 
         Parameters
         ----------
@@ -509,20 +352,60 @@ class PopClassifier(object):
         """
 
         summary = {
-            "accuracy": [self.accuracy],
-            "precision": [self.precision],
-            "recall": [self.recall],
-            "f1": [self.f1],
-            "confusion_matrix": [self.confusion_matrix]
+            "metric": ["accuracy", "precision", "recall", "f1"],
+            "best_model_results": [self.accuracy, self.precision, self.recall, self.f1]
         }
+        summary = pd.DataFrame(summary)
+
+        if "bootstrap" in self.__train_history.columns:
+            summary_bs = {
+                "metric": ["accuracy", "precision", "recall", "f1"],
+                "bootstrap_results": [self.__bs_accuracy, self.__bs_precision,
+                                      self.__bs_recall, self.__bs_f1]
+            }
+            summary_bs = pd.DataFrame(summary_bs)
+            summary = summary.merge(summary_bs, on="metric")
+
+        elif (self.train_history["rep"].nunique() > 1) and \
+            (self.train_history["split"].nunique() > 1):
+            summary_cv = {
+                "metric": ["accuracy", "precision", "recall", "f1"],
+                "cv_results": [self.__cv_accuracy, self.__cv_precision,
+                               self.__cv_recall, self.__cv_f1]
+            }
+            summary_cv = pd.DataFrame(summary_cv)
+            summary = summary.merge(summary_cv, on="metric")
 
         if save:
-            summary = pd.DataFrame(summary)
             summary.to_csv(os.path.join(self.output_folder,
                           "classifier_classification_summary.csv"),
                            index=False)
 
         return summary
+    
+    def get_confusion_matrix(self, best_model_only=True):
+        """
+        Get the confusion matrix for the classification results.
+
+        Parameters
+        ----------
+        best_model_only : bool, optional
+            Whether to retrieve only the confusion matrix data generated by the best model
+            during training. If set to False, then will also retrieve confusion matrix
+            data from bootstrap results or cross-validation results. The default is True.
+
+        Returns
+        -------
+        numpy.ndarray or list of numpy.ndarray
+            Confusion matrix or list of confusion matrices if best_model_only is False.
+        """           
+        if best_model_only:
+            return self.confusion_matrix
+        else:
+            if "bootstrap" in self.train_history.columns:
+                return [self.confusion_matrix, self.__bs_confusion_matrix]
+            else:
+                return [self.confusion_matrix, self.__cv_confusion_matrix]
 
     def rank_site_importance(self, save=True):
         """
@@ -800,5 +683,152 @@ class PopClassifier(object):
 
         if dropout_prop > 1 or dropout_prop < 0:
             raise ValueError("dropout_prop must be between 0 and 1")
+
+    # Hidden functions below   
+    def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
+                          dropout_prop, result_folder):
+
+        loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
+
+        for i, input in enumerate(inputs):
+
+            lowest_val_loss_rep = 9999
+            split = i % cv_splits + 1
+            rep = int(i / cv_splits) + 1
+
+            X_train, y_train, X_valid, y_valid = _split_input_classifier(self, input)
+            train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
+                                                                X_valid, y_valid)
+
+            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16,
+                                output_size=len(y_train.unique()),
+                                batch_size=batch_size, dropout_prop=dropout_prop)
+            optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+            loss_func = nn.CrossEntropyLoss()
+
+            for epoch in range(epochs):
+
+                train_loss = 0
+                valid_loss = 0
+
+                for _, (data, target) in enumerate(train_loader):
+                    optimizer.zero_grad()
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().long())
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.data.item()
+            
+                # Calculate average train loss
+                avg_train_loss = train_loss / len(train_loader)
+
+                for _, (data, target) in enumerate(valid_loader):
+                    output = net(data)
+                    loss = loss_func(output.squeeze(), target.squeeze().long())
+                    valid_loss += loss.data.item()
+
+                    if valid_loss < lowest_val_loss_rep:
+                        lowest_val_loss_rep = valid_loss
+                        torch.save(net, os.path.join(result_folder, 
+                                                     f"best_model_split{split}_rep{rep}.pt"))
+
+                    if valid_loss < self.__lowest_val_loss_total:
+                        self.__lowest_val_loss_total = valid_loss
+                        torch.save(net, os.path.join(self.output_folder, "best_model.pt"))
+
+                # Calculate average validation loss
+                avg_valid_loss = valid_loss / len(valid_loader)
+
+                loss_dict["rep"].append(rep)
+                loss_dict["split"].append(split)
+                loss_dict["epoch"].append(epoch)
+                loss_dict["train"].append(avg_train_loss)
+                loss_dict["valid"].append(avg_valid_loss)
+
+        return pd.DataFrame(loss_dict)
+
+    def __test_on_multiple_models(self, reps, splits, X_test, y_true_pops, folder):
+
+        result_df = pd.DataFrame()
+        for rep in reps:
+            for split in splits:
+                model = torch.load(os.path.join(
+                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                y_pred = model(X_test).argmax(axis=1)
+                y_pred_pops = self.label_enc.inverse_transform(y_pred)
+                cv_test_results_temp = pd.DataFrame(
+                    {"rep": rep, "split": split, 
+                     "true_pop": y_true_pops, "pred_pop": y_pred_pops})
+                result_df = pd.concat([result_df, cv_test_results_temp])
+
+        return result_df
+                                    
+
+    def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only, bootstraps):
+
+        # Calculate performance metrics for best model    
+        results = self.__organize_performance_metrics(self.test_results, y_true_pops, y_true, y_pred)
+        self.__confusion_matrix, self.__accuracy, self.__precision, self.__recall, self.__f1 = results              
+
+        # Calculate ensemble performance metrics if not best model only
+        if not best_model_only and bootstraps is None:
+            y_pred_cv = self.label_enc.transform(self.cv_test_results["pred_pop"])
+            y_true_cv = self.label_enc.transform(self.cv_test_results["true_pop"])
+            results = self.__organize_performance_metrics(
+                self.cv_test_results, y_true_pops, y_true_cv, y_pred_cv)
+            self.__cv_confusion_matrix, self.__cv_accuracy, self.__cv_precision, self.__cv_recall, self.__cv_f1 = results
+
+        elif not best_model_only:
+            y_pred_bs = self.label_enc.transform(self.__bootstrap_test_results["pred_pop"])
+            y_true_bs = self.label_enc.transform(self.__bootstrap_test_results["true_pop"])
+            results = self.__organize_performance_metrics(
+                self.__bootstrap_test_results, y_true_pops, y_true_bs, y_pred_bs)
+            self.__bs_confusion_matrix, self.__bs_accuracy, self.__bs_precision, self.__bs_recall, self.__bs_f1 = results
+
+    def __organize_performance_metrics(self, result_df, y_true_pops, y_true, y_pred):
+        cf = np.round(confusion_matrix(
+            result_df["true_pop"], result_df["pred_pop"], 
+            labels=np.unique(y_true_pops).tolist(), normalize="true"), 3)
+        accuracy = np.round(accuracy_score(y_true, y_pred), 3)
+        precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
+        recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
+        f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
+
+        return cf, accuracy, precision, recall, f1
+
+    def __assign_on_multiple_models(self, X_unknown, folder):
+        reps = self.train_history["rep"].unique()
+        splits = self.train_history["split"].unique()
+
+        # Create empty array to fill
+        array_width_total = splits.max() * reps.max()
+        array = np.zeros(shape=(len(X_unknown), array_width_total))
+        pos = 0
+
+        for rep in reps:
+            for split in splits:
+                model = torch.load(os.path.join(
+                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                preds = model(X_unknown).argmax(axis=1)
+                array[:, pos] = preds
+                pos += 1
+
+        return array
+
+    def __get_most_common_preds(self, unknown_data):
+        """
+        Want to retrieve the most common prediction across all reps / splits
+        for each unknown sample - give estimate of confidence based on how
+        many times a sample is assigned to a population
+        """
+        most_common = np.array([Counter(sorted(row, reverse=True)).\
+                                most_common(1)[0][0] for row in self.__pred_array])
+        most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
+        frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
+        most_common = self.label_enc.inverse_transform(most_common.astype(int))
+        unknown_data.loc[:, "most_assigned_pop"] = most_common    
+        unknown_data.loc[:, "frequency"] = frequency
+
+        return unknown_data
 
 
