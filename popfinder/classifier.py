@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.preprocessing import OneHotEncoder
+from collections import Counter
 import numpy as np
 import pandas as pd
 import os
@@ -425,27 +426,18 @@ class PopClassifier(object):
             bootstraps = None
 
         if not best_model_only and bootstraps is None:
-            # Find unique reps/splits from cross validation
-            array = self.__assign_on_multiple_models(X_unknown, self.__cv_output_folder)
-            # reps = self.train_history["rep"].unique()
-            # splits = self.train_history["split"].unique()
 
-            # for rep in reps:
-            #     for split in splits:
-            #         model = torch.load(os.path.join(
-            #             self.__cv_output_folder,
-            #             f"best_model_split{split}_rep{rep}.pt"))
-            #         preds = model(X_unknown).argmax(axis=1)
-            #         preds = self.label_enc.inverse_transform(preds)
-            #         unknown_data.loc[:, f"assigned_pop_rep{rep}_split{split}"] = preds
+            self.__pred_array = self.__assign_on_multiple_models(
+                X_unknown, self.__cv_output_folder)
 
             # Want to retrieve the most common prediction across all reps / splits
             # for each unknown sample - give estimate of confidence based on how
             # many times a sample is assigned to a population
-            relevant_cols = [l for l in unknown_data.columns.tolist() if "rep" in l]
-            cv_classifications = unknown_data[relevant_cols]
-            most_common = cv_classifications.mode(axis=1)[0]
-            frequency = np.round(cv_classifications.apply(lambda x: x.value_counts().max(), axis=1) / len(relevant_cols), 3)
+            most_common = np.array([Counter(sorted(row, reverse=True)).\
+                                    most_common(1)[0][0] for row in self.__pred_array])
+            most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
+            frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
+            most_common = self.label_enc.inverse_transform(most_common.astype(int))
             unknown_data.loc[:, "most_assigned_pop"] = most_common    
             unknown_data.loc[:, "frequency"] = frequency
 
@@ -453,13 +445,13 @@ class PopClassifier(object):
             # Create empty array to fill
             reps = self.train_history["rep"].unique()
             splits = self.train_history["split"].unique()
-            array_width_total = len(bootstraps) * splits * reps
+            array_width_total = len(bootstraps) * splits.max() * reps.max()
             array = np.zeros(shape=(len(X_unknown), array_width_total))
 
             for bootstrap in range(bootstraps):
                 bootstrap_folder = os.path.join(
                     self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
-                array_width_bootstrap = splits * reps
+                array_width_bootstrap = splits.max() * reps.max()
                 array_end_position = bootstrap * array_width_bootstrap
                 array_start_position = array_end_position - array_width_bootstrap
                 new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
@@ -489,7 +481,7 @@ class PopClassifier(object):
         splits = self.train_history["split"].unique()
 
         # Create empty array to fill
-        array_width_total = splits * reps
+        array_width_total = splits.max() * reps.max()
         array = np.zeros(shape=(len(X_unknown), array_width_total))
         pos = 0
 
@@ -498,7 +490,7 @@ class PopClassifier(object):
                 model = torch.load(os.path.join(
                     folder, f"best_model_split{split}_rep{rep}.pt"))
                 preds = model(X_unknown).argmax(axis=1)
-                preds = self.label_enc.inverse_transform(preds)
+                # preds = self.label_enc.inverse_transform(preds)
                 array[:, pos] = preds
                 pos += 1
 
@@ -674,15 +666,26 @@ class PopClassifier(object):
         if best_model_only:
             e_preds = self.classification.copy()
             folder = self.output_folder
+
         else:
-            relevant_cols = [l for l in self.classification.columns.tolist() if "rep" in l]
-            cv_classifications = self.classification[relevant_cols]
-            cv_classifications.reset_index(inplace=True)
-            e_preds = pd.melt(cv_classifications, id_vars=["id"], 
-                    value_vars=relevant_cols, 
+            pred_df = pd.DataFrame(self.__pred_array)
+            for col in pred_df.columns:
+                pred_df[col] = self.__label_enc.inverse_transform(pred_df[col].astype(int))
+
+            classifications = self.classification.copy()
+            classifications.reset_index(inplace=True)
+            classifications = classifications[["id"]]
+            classifications = pd.concat([classifications, pred_df], axis=1)
+
+            e_preds = pd.melt(classifications, id_vars=["id"], 
+                    value_vars=pred_df.columns, 
                     value_name="assigned_pop")
             e_preds.rename(columns={"id": "sampleID"}, inplace=True)
-            folder = self.__cv_output_folder
+
+            if "bootstrap" in self.train_history.columns:
+                folder = self.__bootstrap_results
+            else:
+                folder = self.__cv_output_folder
 
         _plot_assignment(e_preds, col_scheme, folder, self.__nn_type, save, best_model_only)
 
