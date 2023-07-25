@@ -295,7 +295,7 @@ class PopClassifier(object):
 
         preds = self.best_model(X_unknown).argmax(axis=1)
         preds = self.label_enc.inverse_transform(preds)
-        unknown_data.loc[:, "assigned_pop"] = preds
+        unknown_data.loc[:, "best_model_assigned_pop"] = preds
 
         if "bootstrap" in self.train_history.columns:
             bootstraps = self.train_history["bootstrap"].unique()
@@ -826,8 +826,8 @@ class PopClassifier(object):
         most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
         frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
         most_common = self.label_enc.inverse_transform(most_common.astype(int))
-        unknown_data.loc[:, "most_assigned_pop"] = most_common    
-        unknown_data.loc[:, "frequency"] = frequency
+        unknown_data.loc[:, "most_assigned_pop_across_models"] = most_common    
+        unknown_data.loc[:, "frequency_of_assignment_across_models"] = frequency
 
         return unknown_data
 
