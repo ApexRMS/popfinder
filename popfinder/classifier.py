@@ -700,7 +700,7 @@ class PopClassifier(object):
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
 
-            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16,
+            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16, #TODO: make hidden size a parameter
                                 output_size=len(y_train.unique()),
                                 batch_size=batch_size, dropout_prop=dropout_prop)
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)

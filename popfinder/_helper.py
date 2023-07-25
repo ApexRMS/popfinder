@@ -55,9 +55,9 @@ def _split_input_regressor(input):
 def _generate_data_loaders(X_train, y_train, X_valid, y_valid, batch_size=16):
 
     train = TensorDataset(X_train, y_train)
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
     valid = TensorDataset(X_valid, y_valid)
-    valid_loader = DataLoader(valid, batch_size=len(valid.tensors[0]), shuffle=True)
+    valid_loader = DataLoader(valid, batch_size=len(valid.tensors[0]), shuffle=True, drop_last=True)
 
     return train_loader, valid_loader
 
