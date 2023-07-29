@@ -70,6 +70,10 @@ class PopClassifier(object):
     def output_folder(self):
         return self.__output_folder
 
+    @output_folder.setter
+    def output_folder(self, output_folder):
+        self.__output_folder = output_folder
+
     @property
     def label_enc(self):
         return self.__label_enc
@@ -216,6 +220,7 @@ class PopClassifier(object):
                     "-v", str(valid_size), "-s", str(cv_splits), "-l", str(learning_rate), 
                     "-b", str(batch_size), "-d", str(dropout_prop),
                     "-j", str(jobs)])
+                loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
 
         else:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,

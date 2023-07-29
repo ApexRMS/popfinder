@@ -4,21 +4,24 @@ import multiprocessing as mp
 import argparse
 import os
 
-from popfinder.dataloader import GeneticData
-from popfinder.classifier import PopClassifier
+from dataloader import GeneticData
+from classifier import PopClassifier
 # from popfinder.regressor import PopRegressor
 
 def _train_on_bootstraps(classifier_object, train_args):
-
-    epochs, valid_size, cv_splits, learning_rate, batch_size, dropout_prop, boot = train_args
     
     # Train on new training set
-    classifier_object.train(epochs=epochs, valid_size=valid_size,
-            cv_splits=cv_splits, cv_reps=1,
-            learning_rate=learning_rate, batch_size=batch_size,
-            dropout_prop=dropout_prop)
+    classifier_object.train(epochs=train_args["epochs"],
+                            valid_size=train_args["valid_size"],
+                            cv_splits=train_args["cv_splits"],
+                            learning_rate=train_args["learning_rate"],
+                            batch_size=train_args["batch_size"],
+                            dropout_prop=train_args["dropout_prop"])
     # Save trained model to output folder
     classifier_object.save()
+
+    # Return losses
+    return classifier_object.train_history
 
 def create_classifier_objects(nreps, nboots, popfinder_path):
 
@@ -27,7 +30,7 @@ def create_classifier_objects(nreps, nboots, popfinder_path):
         for boot in range(nboots):
 
             popfinder = PopClassifier.load(os.path.join(popfinder_path, "classifier.pkl"))
-            popfinder.output_folder = os.path.join(popfinder_path, f"rep{rep}_boot{boot}")
+            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep}_boot{boot}")
             os.makedirs(popfinder.output_folder, exist_ok=True)
 
             # Use bootstrap to randomly select sites from training/test/unknown data
@@ -78,11 +81,23 @@ if __name__ == "__main__":
 
     # Generate inputs
     classifier_objects = create_classifier_objects(nreps, nboots, popfinder_path)
-    train_args = (epochs, valid_size, cv_splits, learning_rate, batch_size, dropout_prop)
+    # Create dictionary of train args
+    train_args = {"epochs": epochs, "valid_size": valid_size, "cv_splits": cv_splits,
+                  "learning_rate": learning_rate, "batch_size": batch_size,
+                  "dropout_prop": dropout_prop}
 
     if num_jobs == -1:
         num_jobs = mp.cpu_count()
     pool = mp.Pool(processes=num_jobs)
-    pool.starmap(_train_on_bootstraps, [(c, train_arg) for c, train_arg in zip(classifier_objects, train_args)])
+    results = pool.starmap(_train_on_bootstraps, [(c, train_args) for c in classifier_objects])
     pool.close()
     pool.join()
+
+    for rep in range(nreps):
+        for boot in range(nboots):
+            ind = rep * nboots + boot
+            results[ind]["rep"] = rep + 1
+            results[ind]["bootstrap"] = boot + 1
+    
+    final_results = pd.concat(results, ignore_index=True)
+    final_results.to_csv(os.path.join(popfinder_path, "train_history.csv"), index=False)
