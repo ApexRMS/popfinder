@@ -6,7 +6,10 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 import os
+from subprocess import call
+import tempfile
 
+import popfinder as pf
 from popfinder.dataloader import GeneticData
 from popfinder._neural_networks import ClassifierNet
 from popfinder._helper import _generate_train_inputs
@@ -139,8 +142,9 @@ class PopClassifier(object):
     def nn_type(self):
         return self.__nn_type
 
-    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
-              learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None):
+    def train(self, epochs=100, valid_size=0.2, cv_splits=1, nreps=1,
+              learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None,
+              jobs=1):
         """
         Trains the classification neural network.
 
@@ -152,7 +156,7 @@ class PopClassifier(object):
             Proportion of data to use for validation. The default is 0.2.
         cv_splits : int, optional
             Number of cross-validation splits. The default is 1.
-        cv_reps : int, optional
+        nreps : int, optional
             Number of cross-validation repetitions. The default is 1.
         learning_rate : float, optional
             Learning rate for the neural network. The default is 0.001.
@@ -162,12 +166,15 @@ class PopClassifier(object):
             Dropout proportion for the neural network. The default is 0.
         bootstraps : int, optional
             Number of bootstraps to perform. The default is None.
+        jobs : int, optional
+            If greater than 1, will use multiprocessing to train the neural network. 
+            The default is 1.
         
         Returns
         -------
         None.
         """
-        self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
+        self._validate_train_inputs(epochs, valid_size, cv_splits, nreps,
                                     learning_rate, batch_size, dropout_prop)
         
         self.__lowest_val_loss_total = 9999
@@ -179,22 +186,40 @@ class PopClassifier(object):
 
             loss_df = pd.DataFrame()
 
-            for i in range(bootstraps):
-                boot_folder = os.path.join(self.__bootstrap_results, f"bootstrap_{i + 1}")
-                if not os.path.exists(boot_folder):
-                    os.makedirs(boot_folder)
+            if jobs == 1:
+                for i in range(bootstraps):
+                    boot_folder = os.path.join(self.__bootstrap_results, f"bootstrap_{i + 1}")
+                    if not os.path.exists(boot_folder):
+                        os.makedirs(boot_folder)
 
-                inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                cv_reps, seed=self.random_state, bootstrap=True)
-                boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
-                                    batch_size, dropout_prop, result_folder = boot_folder)
-                
-                boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
-                boot_loss_df["bootstrap"] = i + 1
-                loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
+                    inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
+                                    nreps, seed=self.random_state, bootstrap=True)
+                    boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
+                                        batch_size, dropout_prop, result_folder = boot_folder)
+                    
+                    boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
+                    boot_loss_df["bootstrap"] = i + 1
+                    loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
+            elif jobs > 1:
+                # Create tempfolder
+                tempfolder = tempfile.mkdtemp()
+                self.save(save_path=tempfolder)
+
+                # Find path to _multiboots
+                filepath = pf.__file__
+                folderpath = os.path.dirname(filepath)
+
+                # Instead of looping through bootstrap iteration, run in parallel
+                # to speed up training
+                call(["python", folderpath + "/_mp_training.py", "-p", tempfolder,
+                    "-n", str(bootstraps), "-r", str(nreps), "-e", str(epochs),
+                    "-v", str(valid_size), "-s", str(cv_splits), "-l", str(learning_rate), 
+                    "-b", str(batch_size), "-d", str(dropout_prop),
+                    "-j", str(jobs)])
+
         else:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                            cv_reps, seed=self.random_state, bootstrap=False)
+                                            nreps, seed=self.random_state, bootstrap=False)
             loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
                                                 batch_size, dropout_prop, result_folder = self.__cv_output_folder)
 
@@ -265,7 +290,6 @@ class PopClassifier(object):
                                      "classifier_test_results.csv"), index=False)
 
         self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only, bootstraps)
-
 
     def assign_unknown(self, best_model_only=True, save=True):
         """
@@ -651,7 +675,7 @@ class PopClassifier(object):
             if not os.path.isdir(output_folder):
                 raise ValueError("output_folder must be a valid directory")
 
-    def _validate_train_inputs(self, epochs, valid_size, cv_splits, cv_reps,
+    def _validate_train_inputs(self, epochs, valid_size, cv_splits, nreps,
                                learning_rate, batch_size, dropout_prop):
 
         if not isinstance(epochs, int):
@@ -666,8 +690,8 @@ class PopClassifier(object):
         if not isinstance(cv_splits, int):
             raise TypeError("cv_splits must be an integer")
 
-        if not isinstance(cv_reps, int):
-            raise TypeError("cv_reps must be an integer")
+        if not isinstance(nreps, int):
+            raise TypeError("nreps must be an integer")
 
         if not isinstance(learning_rate, float):
             raise TypeError("learning_rate must be a float")
