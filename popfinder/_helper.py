@@ -5,6 +5,7 @@ from sklearn import preprocessing
 import numpy as np
 import dill
 import os
+import sys
 
 def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123, bootstrap=False):
 
@@ -94,5 +95,6 @@ def _load(load_path=None):
     """
     Loads a saved instance of the class from a pickle file.
     """
+    sys.path.append(os.path.dirname(__file__))
     with open(load_path, "rb") as f:
         return dill.load(f)

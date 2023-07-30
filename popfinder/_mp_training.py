@@ -30,7 +30,7 @@ def create_classifier_objects(nreps, nboots, popfinder_path):
         for boot in range(nboots):
 
             popfinder = PopClassifier.load(os.path.join(popfinder_path, "classifier.pkl"))
-            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep}_boot{boot}")
+            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep+1}_boot{boot+1}")
             os.makedirs(popfinder.output_folder, exist_ok=True)
 
             # Use bootstrap to randomly select sites from training/test/unknown data
