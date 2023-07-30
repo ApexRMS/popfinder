@@ -251,16 +251,16 @@ class PopClassifier(object):
         return best_model_folder
 
 
-    def test(self, best_model_only=True, jobs=1, save=True):
+    def test(self, use_best_model=True, jobs=1, save=True):
         """
         Tests the classification neural network.
 
         Parameters
         ----------
-        best_model_only : bool, optional
+        use_best_model : bool, optional
             Whether to only test the best model only. If set to False, then will use all
-            models generated from all training repeats and cross-validation splits.
-            The default is True.
+            models generated from all training repeats and cross-validation splits and
+            provide an ensemble frequency of assignments. The default is True.
         jobs : int, optional
             If greater than 1 and best_model_only is False, then will use multiprocessing 
             to test the neural network on all available models from multiple iterations
@@ -285,46 +285,63 @@ class PopClassifier(object):
 
         X_test = test_input["alleles"]
         y_test = test_input["pop"]
+
+        # If not using just the best model, then test using all models
+        if not use_best_model:
+            if jobs == 1:
+                if bootstraps is None:  
+                    self.__cv_test_results = self.__test_on_multiple_models(
+                        reps, splits, X_test, y_true_pops, self.__cv_output_folder)
+                    self.__test_results = self.__cv_test_results
+                else:
+                    self.__bootstrap_test_results = pd.DataFrame()
+                    for bootstrap in bootstraps:
+                        bootstrap_folder = os.path.join(
+                            self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
+                        boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
+                        self.__bootstrap_test_results = pd.concat([self.__bootstrap_test_results,
+                                                            boot_result])
+                        self.__test_results = self.__bootstrap_test_results
+            elif jobs > 1:
+                # Create tempfolder
+                tempfolder = tempfile.mkdtemp()
+                self.save(save_path=tempfolder)
+
+                # Find path to _multiboots
+                filepath = pf.__file__
+                folderpath = os.path.dirname(filepath)
+
+                # Instead of looping through bootstrap iteration, run in parallel
+                # to speed up training
+                call(["python", folderpath + "/_mp_testing.py", "-p", tempfolder,
+                    "-r", str(reps), "-b", str(bootstraps), "-j", str(jobs)])
+                self.__test_results = pd.read_csv(os.path.join(tempfolder, "test_results.csv"))
         
         # If best model only, use label encoder from best model
-        if best_model_only and self.label_enc is None:
-            best_model_folder = self.__find_best_model_folder_from_mp()
-            best_model_obj = PopClassifier.load(os.path.join(best_model_folder, "classifier.pkl"))
-            self.label_enc = best_model_obj.label_enc
+        elif use_best_model:
+            if self.label_enc is None:
+                best_model_folder = self.__find_best_model_folder_from_mp()
+                best_model_obj = PopClassifier.load(os.path.join(best_model_folder, "classifier.pkl"))
+                self.label_enc = best_model_obj.label_enc
 
-        y_test = self.label_enc.transform(y_test)
-        X_test, y_test = _data_converter(X_test, y_test)
+            y_test = self.label_enc.transform(y_test)
+            X_test, y_test = _data_converter(X_test, y_test)
 
-        y_true = y_test.squeeze()
-        y_true_pops = self.label_enc.inverse_transform(y_true)
+            y_true = y_test.squeeze()
+            y_true_pops = self.label_enc.inverse_transform(y_true)
 
-        # Generate predictions for each cross validation model
-        if not best_model_only and bootstraps is None:
-            self.__cv_test_results = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, 
-                                                                    self.__cv_output_folder)
+            # Predict using the best model and revert from label encoder
+            y_pred = self.best_model(X_test).argmax(axis=1)
+            y_pred_pops = self.label_enc.inverse_transform(y_pred)
 
-        elif not best_model_only:
-            # TODO: multiprocess this
-            self.__bootstrap_test_results = pd.DataFrame()
-            for bootstrap in bootstraps:
-                bootstrap_folder = os.path.join(
-                    self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
-                boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
-                self.__bootstrap_test_results = pd.concat([self.__bootstrap_test_results,
-                                                    boot_result])
-
-        # Predict using the best model and revert from label encoder
-        y_pred = self.best_model(X_test).argmax(axis=1)
-        y_pred_pops = self.label_enc.inverse_transform(y_pred)
-
-        self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
-                                            "pred_pop": y_pred_pops})
+            self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
+                                                "pred_pop": y_pred_pops})
 
         if save:
             self.test_results.to_csv(os.path.join(self.output_folder,
-                                     "classifier_test_results.csv"), index=False)
+                                    "classifier_test_results.csv"), index=False)
 
-        self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only, bootstraps)
+        self.__calculate_performance(y_true, y_pred, y_true_pops, use_best_model, bootstraps)
 
     def assign_unknown(self, best_model_only=True, save=True):
         """
