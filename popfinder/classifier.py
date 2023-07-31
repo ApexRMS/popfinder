@@ -312,7 +312,7 @@ class PopClassifier(object):
                 folderpath = os.path.dirname(filepath)
 
                 # Instead of looping through bootstrap iteration, run in parallel
-                # to speed up training
+                # to speed up testing
                 call(["python", folderpath + "/_mp_testing.py", "-p", tempfolder,
                     "-r", str(reps), "-b", str(bootstraps), "-j", str(jobs)])
                 self.__test_results = pd.read_csv(os.path.join(tempfolder, "test_results.csv"))
