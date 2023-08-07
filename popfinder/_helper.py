@@ -30,7 +30,7 @@ def _split_input_classifier(clf, input):
     y_valid = valid_input["pop"] # one hot encode
 
     # Label encode y values
-    clf.label_enc = preprocessing.LabelEncoder()
+    # clf.label_enc = preprocessing.LabelEncoder()
     y_train = clf.label_enc.fit_transform(y_train)
     y_valid = clf.label_enc.transform(y_valid)
 

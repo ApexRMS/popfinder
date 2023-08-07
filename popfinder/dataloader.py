@@ -7,6 +7,7 @@ import sys
 import os
 
 from sklearn.model_selection import RepeatedStratifiedKFold, train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 class GeneticData():
     """
@@ -230,6 +231,10 @@ class GeneticData():
         self.data = self.read_data()
         self.knowns, self.unknowns = self.split_unknowns(self.data)
         self.train, self.test = self.split_train_test(test_size=test_size, seed=seed)
+
+        # Create label encoder from train target
+        self.label_enc = LabelEncoder()
+        self.label_enc.fit_transform(self.train["pop"])
 
     def _load_genotypes(self, genetic_data):
 
