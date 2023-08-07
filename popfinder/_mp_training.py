@@ -8,20 +8,21 @@ from dataloader import GeneticData
 from classifier import PopClassifier
 # from popfinder.regressor import PopRegressor
 
-def _train_on_bootstraps(classifier_object, train_args):
+def _train_on_bootstraps(clf_object, train_args):
     
     # Train on new training set
-    classifier_object.train(epochs=train_args["epochs"],
+    clf_object.train(epochs=train_args["epochs"],
                             valid_size=train_args["valid_size"],
                             cv_splits=train_args["cv_splits"],
                             learning_rate=train_args["learning_rate"],
                             batch_size=train_args["batch_size"],
                             dropout_prop=train_args["dropout_prop"])
     # Save trained model to output folder
-    classifier_object.save()
+    clf_object.save()
 
     # Return losses
-    return classifier_object.train_history
+    clf_object.train_history.to_csv(os.path.join(clf_object.output_folder, "loss.csv"), index=False)
+    return clf_object.train_history
 
 def create_classifier_objects(nreps, nboots, popfinder_path):
 

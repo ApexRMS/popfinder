@@ -37,11 +37,7 @@ class PopClassifier(object):
         if output_folder is None:
             output_folder = os.getcwd()
         self.__output_folder = output_folder
-        if not os.path.exists(self.__output_folder):
-            os.makedirs(self.__output_folder)
         self.__cv_output_folder = os.path.join(output_folder, "cv_results")
-        if not os.path.exists(self.__cv_output_folder):
-            os.makedirs(self.__cv_output_folder)
         self.__label_enc = data.label_enc
         self.__train_history = None
         self.__best_model = None
@@ -62,6 +58,7 @@ class PopClassifier(object):
 
         self.__test_on_bootstraps = False
         self.__test_on_cv_splits = False
+        self.__mp_run = False
 
     @property
     def data(self):
@@ -79,8 +76,6 @@ class PopClassifier(object):
     def output_folder(self, output_folder):
         self.__output_folder = output_folder
         self.__cv_output_folder = os.path.join(output_folder, "cv_results")
-        if not os.path.exists(self.__cv_output_folder):
-            os.makedirs(self.__cv_output_folder)
 
     @property
     def label_enc(self):
@@ -206,9 +201,12 @@ class PopClassifier(object):
                 for i in range(bootstraps):
                     for j in range(nreps):
                         #TODO: how does this affect mp results
-                        boot_folder = os.path.join(self.output_folder, f"rep{j+1}_boot{i+1}")
-                        if not os.path.exists(boot_folder):
-                            os.makedirs(boot_folder)
+                        if not self.__mp_run:
+                            boot_folder = os.path.join(self.output_folder, f"rep{j+1}_boot{i+1}")
+                            if not os.path.exists(boot_folder):
+                                os.makedirs(boot_folder)
+                        else:
+                            boot_folder = self.output_folder
 
                         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         nreps, seed=self.random_state, bootstrap=True)
@@ -221,9 +219,12 @@ class PopClassifier(object):
             elif jobs > 1:
                 # Create tempfolder
                 tempfolder = tempfile.mkdtemp()
+
+                # Let popfinder know this is a multiprocessing run (affects output folder creation)
+                self.__mp_run = True
                 self.save(save_path=tempfolder)
 
-                # Find path to _multiboots
+                # Find path to _mp_training
                 filepath = pf.__file__
                 folderpath = os.path.dirname(filepath)
 
@@ -244,7 +245,7 @@ class PopClassifier(object):
 
         self.__train_history = loss_df
        
-        if (jobs == 1) or (bootstraps is None):
+        if (jobs == 1) or (not multiprocess):
             self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
         else:
             best_model_folder = self.__find_best_model_folder_from_mp()
@@ -299,7 +300,7 @@ class PopClassifier(object):
         # If not using just the best model, then test using all models
         if not use_best_model:
             # Loop through all models created from reps, bootstraps, and cv splits
-            # Add code from _mp_testing here + refactor into new function
+            # Add code from _mp_testing here + refactor into new function                
             if bootstraps is None: 
                 # Tests on all reps and CV splits   
                 self.__test_results = self.__test_on_multiple_models(
@@ -311,12 +312,13 @@ class PopClassifier(object):
             else:
                 # Tests on all reps, bootstraps, and cv splits
                 self.__test_results = pd.DataFrame()
-                for bootstrap in bootstraps:
-                    bootstrap_folder = os.path.join(
-                        self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
-                    boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
-                    self.__test_results = pd.concat([self.__test_results,
-                                                        boot_result])
+                for rep in reps:
+                    for boot in bootstraps:
+                        bootstrap_folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
+                        if len(splits) > 1:
+                            bootstrap_folder = os.path.join(bootstrap_folder, "cv_results")
+                        boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
+                        self.__test_results = pd.concat([self.__test_results, boot_result])
                 y_pred = self.label_enc.transform(self.__test_results["pred_pop"])
                 y_true = self.label_enc.transform(self.__test_results["true_pop"])
                 y_true_pops = self.label_enc.inverse_transform(y_true)
@@ -750,6 +752,9 @@ class PopClassifier(object):
     def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
                           dropout_prop, result_folder):
 
+        if not os.path.exists(result_folder):
+            os.mkdir(result_folder)
+
         loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
 
         for i, input in enumerate(inputs):
@@ -791,8 +796,7 @@ class PopClassifier(object):
 
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
-                        torch.save(net, os.path.join(result_folder, 
-                                                     f"best_model_split{split}_rep{rep}.pt"))
+                        torch.save(net, os.path.join(result_folder, f"best_model_split{split}.pt"))
 
                     if valid_loss < self.__lowest_val_loss_total:
                         self.__lowest_val_loss_total = valid_loss
@@ -814,8 +818,10 @@ class PopClassifier(object):
         result_df = pd.DataFrame()
         for rep in reps:
             for split in splits:
-                model = torch.load(os.path.join(
-                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                if len(splits) == 1:
+                    model = torch.load(os.path.join(folder, f"best_model.pt"))
+                else:
+                    model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
                 y_pred = model(X_test).argmax(axis=1)
                 y_pred_pops = self.label_enc.inverse_transform(y_pred)
                 cv_test_results_temp = pd.DataFrame(
@@ -860,8 +866,7 @@ class PopClassifier(object):
 
         for rep in reps:
             for split in splits:
-                model = torch.load(os.path.join(
-                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
                 preds = model(X_unknown).argmax(axis=1)
                 array[:, pos] = preds
                 pos += 1
