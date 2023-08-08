@@ -18,7 +18,7 @@ def _train_on_bootstraps(clf_object, train_args):
                             batch_size=train_args["batch_size"],
                             dropout_prop=train_args["dropout_prop"])
     # Save trained model to output folder
-    clf_object.save()
+    # clf_object.save()
 
     # Return losses
     clf_object.train_history.to_csv(os.path.join(clf_object.output_folder, "loss.csv"), index=False)
@@ -101,4 +101,4 @@ if __name__ == "__main__":
             results[ind]["bootstrap"] = boot + 1
     
     final_results = pd.concat(results, ignore_index=True)
-    final_results.to_csv(os.path.join(popfinder_path, "train_history.csv"), index=False)
+    final_results.to_csv(os.path.join(popfinder_path, "train_history.csv"), index=False)    
