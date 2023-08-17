@@ -156,7 +156,7 @@ class PopClassifier(object):
         cv_splits : int, optional
             Number of cross-validation splits. The default is 1.
         nreps : int, optional
-            Number of cross-validation repetitions. The default is 1.
+            Number of repetitions. The default is 1.
         learning_rate : float, optional
             Learning rate for the neural network. The default is 0.001.
         batch_size : int, optional
@@ -210,6 +210,7 @@ class PopClassifier(object):
                                             batch_size, dropout_prop, result_folder = boot_folder)
                         
                         boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
+                        boot_loss_df["rep"] = j + 1
                         boot_loss_df["bootstrap"] = i + 1
                         loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
             elif jobs > 1:
@@ -304,25 +305,16 @@ class PopClassifier(object):
 
         # If not using just the best model, then test using all models
         if not use_best_model:
-            if (bootstraps is None) and (reps is None): 
-                # Tests on all reps and CV splits   
-                self.__test_results = self.__test_on_multiple_models(
-                    reps, splits, X_test, y_true_pops, self.__cv_output_folder)
-                y_pred = self.label_enc.transform(self.__test_results["pred_pop"])
-                y_true = self.label_enc.transform(self.__test_results["true_pop"])
-                y_true_pops = self.label_enc.inverse_transform(y_true)
+            if bootstraps is None: 
+                bootstraps = 1
+            if reps is None:
+                reps = 1
 
-            else:
-                # Tests on all reps, bootstraps, and cv splits
-                self.__test_results = pd.DataFrame()
-                for rep in reps:
-                    for boot in bootstraps:
-                        bootstrap_folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
-                        boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
-                        self.__test_results = pd.concat([self.__test_results, boot_result])
-                y_pred = self.label_enc.transform(self.__test_results["pred_pop"])
-                y_true = self.label_enc.transform(self.__test_results["true_pop"])
-                y_true_pops = self.label_enc.inverse_transform(y_true)
+            # Tests on all reps, bootstraps, and cv splits
+            self.__test_results = self.__test_on_multiple_models(reps, bootstraps, splits, X_test, y_true_pops)
+            y_pred = self.label_enc.transform(self.__test_results["pred_pop"])
+            y_true = self.label_enc.transform(self.__test_results["true_pop"])
+            y_true_pops = self.label_enc.inverse_transform(y_true)
 
         elif use_best_model:
             # Predict using the best model and revert from label encoder
@@ -699,13 +691,12 @@ class PopClassifier(object):
 
         self.__prepare_result_folder(result_folder)
 
-        loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
+        loss_dict = {"split": [], "epoch": [], "train": [], "valid": []}
 
         for i, input in enumerate(inputs):
 
             lowest_val_loss_rep = 9999
             split = i % cv_splits + 1
-            rep = int(i / cv_splits) + 1
 
             X_train, y_train, X_valid, y_valid = _split_input_classifier(self, input)
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
@@ -749,7 +740,6 @@ class PopClassifier(object):
                 # Calculate average validation loss
                 avg_valid_loss = valid_loss / len(valid_loader)
 
-                loss_dict["rep"].append(rep)
                 loss_dict["split"].append(split)
                 loss_dict["epoch"].append(epoch)
                 loss_dict["train"].append(avg_train_loss)
@@ -763,24 +753,23 @@ class PopClassifier(object):
         if not os.path.exists(result_folder):
             os.mkdir(result_folder)
         elif clear_old_results:
-            # Clean out result folder if contains previous results
-            old_files = os.listdir(result_folder)
-            for f in old_files:
-                filepath = os.path.join(result_folder, f)
-                shutil.rmtree(filepath)
+            shutil.rmtree(result_folder)
+            os.mkdir(result_folder)
 
-    def __test_on_multiple_models(self, reps, splits, X_test, y_true_pops, folder):
+    def __test_on_multiple_models(self, reps, bootstraps, splits, X_test, y_true_pops):
 
         result_df = pd.DataFrame()
         for rep in reps:
-            for split in splits:
-                model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
-                y_pred = model(X_test).argmax(axis=1)
-                y_pred_pops = self.label_enc.inverse_transform(y_pred)
-                cv_test_results_temp = pd.DataFrame(
-                    {"rep": rep, "split": split, 
-                     "true_pop": y_true_pops, "pred_pop": y_pred_pops})
-                result_df = pd.concat([result_df, cv_test_results_temp])
+            for boot in bootstraps:
+                for split in splits:
+                    folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
+                    model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
+                    y_pred = model(X_test).argmax(axis=1)
+                    y_pred_pops = self.label_enc.inverse_transform(y_pred)
+                    cv_test_results_temp = pd.DataFrame(
+                        {"rep": rep, "bootstrap": boot, "split": split, 
+                        "true_pop": y_true_pops, "pred_pop": y_pred_pops})
+                    result_df = pd.concat([result_df, cv_test_results_temp])
 
         return result_df
                                     

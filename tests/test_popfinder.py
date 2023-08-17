@@ -10,6 +10,7 @@ import torch
 import os
 import shutil
 import re
+from sklearn.preprocessing import LabelEncoder
 
 TEST_OUTPUT_FOLDER = "tests/test_outputs"
 
@@ -85,6 +86,8 @@ def test_genetic_data():
     dat = gen_dat.read_data()
     assert dat.equals(gen_dat.data)
 
+    assert type(gen_dat.label_enc) == LabelEncoder
+
     assert gen_dat.data.empty == False
     assert gen_dat.knowns.empty == False
     assert gen_dat.unknowns.empty == False
@@ -105,9 +108,6 @@ def test_classifier_inputs():
 
     with pytest.raises(TypeError, match="output_folder must be a string"):
         PopClassifier(data_obj, output_folder=123)
-
-    with pytest.raises(ValueError, match="output_folder must be a valid directory"):
-        PopClassifier(data_obj, output_folder="bad/path")
 
 def test_classifier_train():
 
@@ -135,7 +135,7 @@ def test_classifier_train():
         classifier.train(cv_splits="0.2")
 
     with pytest.raises(TypeError, match="cv_reps must be an integer"):
-        classifier.train(cv_reps="0.2")
+        classifier.train(nreps="0.2")
 
     with pytest.raises(TypeError, match="learning_rate must be a float"):
         classifier.train(learning_rate="0.2")
@@ -157,6 +157,32 @@ def test_classifier_train():
     assert classifier.train_history.empty == False
     assert isinstance(classifier.best_model, torch.nn.Module)
 
+    # Output folder should contain one result folder (rep1_boot1) + best model
+    f = "rep1_boot1"
+    assert "best_model.pt" in os.listdir(classifier.output_folder)
+    assert f in os.listdir(classifier.output_folder)
+    assert "best_model_split1.pt" in os.listdir(os.path.join(classifier.output_folder, f))
+    assert "loss.csv" in os.listdir(os.path.join(classifier.output_folder, f))
+
+    # Testing parameter combos
+    params = {"jobs": [1, 2],
+              "reps": [1, 2],
+              "bootstraps": [1,2],
+              "splits": [1,2]}
+    
+    for job in params["jobs"]:
+        for rep in params["reps"]:
+            for boot in params["bootstraps"]:
+                for split in params["splits"]:
+                    classifier.train(cv_splits=split, nreps=rep, bootstraps=boot, jobs=job)
+                    f = f"rep{rep}_boot{boot}"
+                    assert "best_model.pt" in os.listdir(classifier.output_folder)
+                    assert f in os.listdir(classifier.output_folder)
+                    assert f"best_model_split{split}.pt" in os.listdir(os.path.join(classifier.output_folder, f))
+                    assert "loss.csv" in os.listdir(os.path.join(classifier.output_folder, f))
+                    assert len(classifier.train_history["rep"].unique()) == reps
+                    assert len(classifier.train_history["bootstrap"].unique()) == bootstraps
+
 def test_classifier_test():
 
     data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
@@ -165,6 +191,7 @@ def test_classifier_test():
     classifier.train()
     classifier.test()
 
+    # Check outputs
     assert isinstance(classifier.test_results, pd.DataFrame)
     assert classifier.test_results.empty == False
     assert isinstance(classifier.confusion_matrix, np.ndarray)
@@ -182,6 +209,33 @@ def test_classifier_test():
     assert isinstance(classifier.f1, float)
     assert classifier.f1 > 0.0
     assert classifier.f1 < 1.0
+
+    # Test non-multiprocessing results
+    classifier.train(cv_splits=2, nreps=2, bootstraps=2)
+    classifier.test(use_best_model=False)
+    assert np.sum([x in classifier.test_results.columns for x in ["rep", "split"]]) == 2
+    assert len(classifier.test_results["rep"].unique()) == 2
+    assert len(classifier.test_results["bootstrap"].unique()) == 2
+    assert len(classifier.test_results["split"].unique()) == 2 
+    classifier.test()
+    assert np.sum([x not in classifier.test_results.columns for x in ["rep", "split"]]) == 2
+
+    # Test multiprocessing results
+    classifier.train(cv_splits=2, nreps=2, bootstraps=2, jobs=2)
+    classifier.test(use_best_model=False)
+    assert np.sum([x in classifier.test_results.columns for x in ["rep", "split"]]) == 2
+    assert len(classifier.test_results["rep"].unique()) == 2
+    assert len(classifier.test_results["bootstrap"].unique()) == 2
+    assert len(classifier.test_results["split"].unique()) == 2 
+    classifier.test()
+    assert np.sum([x not in classifier.test_results.columns for x in ["rep", "split"]]) == 2
+
+    # Test save
+    save_path = os.path.join(classifier.output_folder, "classifier_test_results.csv")
+    assert os.path.exists(save_path)
+    os.remove(save_path)
+    classifier.test(save=False)
+    assert not os.path.exists(save_path)
 
 def test_classifier_assign_unknown_and_get_results():
 
