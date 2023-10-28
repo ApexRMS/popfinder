@@ -24,14 +24,14 @@ def _train_on_bootstraps(clf_object, train_args):
     clf_object.train_history.to_csv(os.path.join(clf_object.output_folder, "loss.csv"), index=False)
     return clf_object.train_history
 
-def create_classifier_objects(rep_start, nreps, boot_start, nboots, popfinder_path):
+def create_classifier_objects(rep_start, nreps, nboots, popfinder_path):
 
     classifier_objects = []
-    for rep in range(rep_start, nreps + rep_start):
-        for boot in range(boot_start, nboots + boot_start):
+    for rep in range(rep_start, nreps):
+        for boot in range(nboots):
 
             popfinder = PopClassifier.load(os.path.join(popfinder_path, "classifier.pkl"))
-            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep}_boot{boot}")
+            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep+1}_boot{boot+1}")
             os.makedirs(popfinder.output_folder, exist_ok=True)
 
             # Use bootstrap to randomly select sites from training/test/unknown data
@@ -59,7 +59,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", help="Path to PopClassifier object")
-    parser.add_argument("--n_start", help="Starting bootstrap number", type=int)
     parser.add_argument("-n", help="Number of bootstraps", type=int)
     parser.add_argument("--r_start", help="Starting repetition number", type=int)
     parser.add_argument("-r", help="Number of repetitions", type=int)
@@ -72,7 +71,6 @@ if __name__ == "__main__":
     parser.add_argument("-j", help="Number of jobs", type=int)
     args = parser.parse_args()
     popfinder_path = args.p
-    boot_start = args.n_start
     nboots = args.n
     rep_start = args.r_start
     nreps = args.r
@@ -85,7 +83,7 @@ if __name__ == "__main__":
     num_jobs = args.j
 
     # Generate inputs
-    classifier_objects = create_classifier_objects(rep_start, nreps, boot_start, nboots, popfinder_path)
+    classifier_objects = create_classifier_objects(rep_start, nreps, nboots, popfinder_path)
     # Create dictionary of train args
     train_args = {"epochs": epochs, "valid_size": valid_size, "cv_splits": cv_splits,
                   "learning_rate": learning_rate, "batch_size": batch_size,
@@ -98,10 +96,10 @@ if __name__ == "__main__":
     pool.close()
     pool.join()
 
-    for rep in range(rep_start, nreps + rep_start):
-        for boot in range(boot_start, nboots + boot_start):
-            ind = rep * nboots + (boot - boot_start)
-            results[ind]["rep"] = rep + 1
+    for rep in range((nreps - rep_start)):
+        for boot in range(nboots):
+            ind = rep * nboots + boot
+            results[ind]["rep"] = rep_start + rep + 1
             results[ind]["bootstrap"] = boot + 1
     
     final_results = pd.concat(results, ignore_index=True)

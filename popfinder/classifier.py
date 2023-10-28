@@ -183,17 +183,16 @@ class PopClassifier(object):
         self.__prepare_result_folder(self.output_folder, overwrite_results)
 
         files = os.listdir(self.output_folder)
-        if (overwrite_results) or (len(files) == 0):
-            bootstrap_begin = 0
+        if (overwrite_results) or (len(files) == 0) or (self.train_history is None):
+            # bootstrap_begin = 0
             nrep_begin = 0
-            # self.__lowest_val_loss_total = 9999
         else:
             #search output folder for largest bootstrap number
-            existing_bs = [int(f.split("_")[-1].replace("boot", "")) for f in files if "boot" in f]
+            # existing_bs = [int(f.split("_")[-1].replace("boot", "")) for f in files if "boot" in f]
             existing_reps = [int(f.split("_")[-2].replace("rep", "")) for f in files if "rep" in f]
-            bootstrap_begin = max(existing_bs)
+            # bootstrap_begin = max(existing_bs)
             nrep_begin = max(existing_reps)
-            bootstraps = bootstrap_begin + bootstraps
+            # bootstraps = bootstrap_begin + bootstraps
             nreps = nrep_begin + nreps 
 
         multi_output = (bootstraps is not None) or (nreps is not None)
@@ -201,14 +200,14 @@ class PopClassifier(object):
         if multi_output:
 
             if bootstraps is None:
-                bootstraps = bootstrap_begin + 1
+                bootstraps = 1
             if nreps is None:
                 nreps = nrep_begin + 1
 
             loss_df = pd.DataFrame()
 
             if jobs == 1:
-                for i in range(bootstrap_begin, bootstraps):
+                for i in range(bootstraps):
                     for j in range(nrep_begin, nreps):
                         #TODO: how does this affect mp results
                         if not self.__mp_run:
@@ -242,10 +241,9 @@ class PopClassifier(object):
                 # Instead of looping through bootstrap iteration, run in parallel
                 # to speed up training
                 call(["python", folderpath + "/_mp_training.py", "-p", tempfolder,
-                    "--n_start", str(bootstrap_begin), "-n", str(bootstraps), 
-                    "--r_start", str(nrep_begin), "-r", str(nreps), "-e", str(epochs),
-                    "-v", str(valid_size), "-s", str(cv_splits), "-l", str(learning_rate), 
-                    "-b", str(batch_size), "-d", str(dropout_prop),
+                    "-n", str(bootstraps), "--r_start", str(nrep_begin), "-r", str(nreps), 
+                    "-e", str(epochs), "-v", str(valid_size), "-s", str(cv_splits), 
+                    "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop),
                     "-j", str(jobs)])
                 loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
 
@@ -265,21 +263,22 @@ class PopClassifier(object):
         if (jobs == 1) or (not multi_output):
             self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
         else:
-            best_model_folder = self.__find_best_model_folder_from_mp()
-            self.__best_model = torch.load(os.path.join(best_model_folder, "best_model.pt"))
+            best_model_folder, min_split = self.__find_best_model_folder_from_mp()
+            self.__best_model = torch.load(os.path.join(best_model_folder, f"best_model_split{min_split}.pt"))
             torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
-            self.__clean_mp_folders(nreps, bootstraps)
+            self.__clean_mp_folders(nrep_begin, nreps, bootstraps)
 
     # TODO: move below
     def __find_best_model_folder_from_mp(self):
         min_loss = self.train_history.iloc[self.train_history[["valid"]].idxmin()]
         min_rep = min_loss["rep"].values[0]
         min_boot = min_loss["bootstrap"].values[0]
+        min_split = min_loss["split"].values[0]
         best_model_folder = os.path.join(self.output_folder, f"rep{min_rep}_boot{min_boot}")
-        return best_model_folder
+        return best_model_folder, min_split
     
-    def __clean_mp_folders(self, nreps, bootstraps):
-        for rep in range(nreps):
+    def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
+        for rep in range(nrep_begin, nreps):
             for boot in range(bootstraps):
                 folder = os.path.join(self.output_folder, f"rep{rep+1}_boot{boot+1}")
                 os.remove(os.path.join(folder, "best_model.pt"))
