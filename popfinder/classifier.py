@@ -51,6 +51,7 @@ class PopClassifier(object):
         self.__confusion_matrix = None
         self.__nn_type = "classifier"
         self.__mp_run = False
+        self.__lowest_val_loss_total = 9999
 
     @property
     def data(self):
@@ -143,7 +144,7 @@ class PopClassifier(object):
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, nreps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None,
-              jobs=1, clear_old_results=True):
+              jobs=1, overwrite_results=True):
         """
         Trains the classification neural network.
 
@@ -168,7 +169,7 @@ class PopClassifier(object):
         jobs : int, optional
             If greater than 1, will use multiprocessing to train the neural network. 
             The default is 1.
-        clear_old_results : boolean, optional
+        overwrite_results : boolean, optional
             If True, then will clear the output folder before training the new 
             model. The default is True.
         
@@ -179,23 +180,36 @@ class PopClassifier(object):
         self._validate_train_inputs(epochs, valid_size, cv_splits, nreps,
                                     learning_rate, batch_size, dropout_prop)
         
-        self.__lowest_val_loss_total = 9999
-        self.__prepare_result_folder(self.output_folder, clear_old_results)
+        self.__prepare_result_folder(self.output_folder, overwrite_results)
 
-        multiprocess = (bootstraps is not None) or (nreps is not None)
+        files = os.listdir(self.output_folder)
+        if (overwrite_results) or (len(files) == 0):
+            bootstrap_begin = 0
+            nrep_begin = 0
+            # self.__lowest_val_loss_total = 9999
+        else:
+            #search output folder for largest bootstrap number
+            existing_bs = [int(f.split("_")[-1].replace("boot", "")) for f in files if "boot" in f]
+            existing_reps = [int(f.split("_")[-2].replace("rep", "")) for f in files if "rep" in f]
+            bootstrap_begin = max(existing_bs)
+            nrep_begin = max(existing_reps)
+            bootstraps = bootstrap_begin + bootstraps
+            nreps = nrep_begin + nreps 
 
-        if multiprocess:
+        multi_output = (bootstraps is not None) or (nreps is not None)
+
+        if multi_output:
 
             if bootstraps is None:
-                bootstraps = 1
+                bootstraps = bootstrap_begin + 1
             if nreps is None:
-                nreps = 1
+                nreps = nrep_begin + 1
 
             loss_df = pd.DataFrame()
 
             if jobs == 1:
-                for i in range(bootstraps):
-                    for j in range(nreps):
+                for i in range(bootstrap_begin, bootstraps):
+                    for j in range(nrep_begin, nreps):
                         #TODO: how does this affect mp results
                         if not self.__mp_run:
                             boot_folder = os.path.join(self.output_folder, f"rep{j+1}_boot{i+1}")
@@ -228,7 +242,8 @@ class PopClassifier(object):
                 # Instead of looping through bootstrap iteration, run in parallel
                 # to speed up training
                 call(["python", folderpath + "/_mp_training.py", "-p", tempfolder,
-                    "-n", str(bootstraps), "-r", str(nreps), "-e", str(epochs),
+                    "--n_start", str(bootstrap_begin), "-n", str(bootstraps), 
+                    "--r_start", str(nrep_begin), "-r", str(nreps), "-e", str(epochs),
                     "-v", str(valid_size), "-s", str(cv_splits), "-l", str(learning_rate), 
                     "-b", str(batch_size), "-d", str(dropout_prop),
                     "-j", str(jobs)])
@@ -240,9 +255,14 @@ class PopClassifier(object):
             loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
                                                 batch_size, dropout_prop, result_folder = self.__cv_output_folder)
 
-        self.__train_history = loss_df
+        # Save training history
+        if self.__train_history is None:
+            self.__train_history = loss_df
+        else:
+            self.__train_history = pd.concat([self.__train_history, loss_df], ignore_index=True)
        
-        if (jobs == 1) or (not multiprocess):
+       # Determine best model
+        if (jobs == 1) or (not multi_output):
             self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
         else:
             best_model_folder = self.__find_best_model_folder_from_mp()
@@ -747,12 +767,12 @@ class PopClassifier(object):
 
         return pd.DataFrame(loss_dict)
     
-    def __prepare_result_folder(self, result_folder, clear_old_results=True):
+    def __prepare_result_folder(self, result_folder, overwrite_results=True):
 
         # Make result folder if it doesn't exist
         if not os.path.exists(result_folder):
             os.mkdir(result_folder)
-        elif clear_old_results:
+        elif overwrite_results:
             shutil.rmtree(result_folder)
             os.mkdir(result_folder)
 

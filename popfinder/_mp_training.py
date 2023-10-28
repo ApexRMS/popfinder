@@ -24,14 +24,14 @@ def _train_on_bootstraps(clf_object, train_args):
     clf_object.train_history.to_csv(os.path.join(clf_object.output_folder, "loss.csv"), index=False)
     return clf_object.train_history
 
-def create_classifier_objects(nreps, nboots, popfinder_path):
+def create_classifier_objects(rep_start, nreps, boot_start, nboots, popfinder_path):
 
     classifier_objects = []
-    for rep in range(nreps):
-        for boot in range(nboots):
+    for rep in range(rep_start, nreps + rep_start):
+        for boot in range(boot_start, nboots + boot_start):
 
             popfinder = PopClassifier.load(os.path.join(popfinder_path, "classifier.pkl"))
-            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep+1}_boot{boot+1}")
+            popfinder.output_folder = os.path.join(popfinder.output_folder, f"rep{rep}_boot{boot}")
             os.makedirs(popfinder.output_folder, exist_ok=True)
 
             # Use bootstrap to randomly select sites from training/test/unknown data
@@ -59,7 +59,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", help="Path to PopClassifier object")
+    parser.add_argument("--n_start", help="Starting bootstrap number", type=int)
     parser.add_argument("-n", help="Number of bootstraps", type=int)
+    parser.add_argument("--r_start", help="Starting repetition number", type=int)
     parser.add_argument("-r", help="Number of repetitions", type=int)
     parser.add_argument("-e", help="Number of epochs", type=int)
     parser.add_argument("-v", help="Validation size", type=float)
@@ -70,7 +72,9 @@ if __name__ == "__main__":
     parser.add_argument("-j", help="Number of jobs", type=int)
     args = parser.parse_args()
     popfinder_path = args.p
+    boot_start = args.n_start
     nboots = args.n
+    rep_start = args.r_start
     nreps = args.r
     epochs = args.e 
     valid_size = args.v 
@@ -81,7 +85,7 @@ if __name__ == "__main__":
     num_jobs = args.j
 
     # Generate inputs
-    classifier_objects = create_classifier_objects(nreps, nboots, popfinder_path)
+    classifier_objects = create_classifier_objects(rep_start, nreps, boot_start, nboots, popfinder_path)
     # Create dictionary of train args
     train_args = {"epochs": epochs, "valid_size": valid_size, "cv_splits": cv_splits,
                   "learning_rate": learning_rate, "batch_size": batch_size,
@@ -94,9 +98,9 @@ if __name__ == "__main__":
     pool.close()
     pool.join()
 
-    for rep in range(nreps):
-        for boot in range(nboots):
-            ind = rep * nboots + boot
+    for rep in range(rep_start, nreps + rep_start):
+        for boot in range(boot_start, nboots + boot_start):
+            ind = rep * nboots + (boot - boot_start)
             results[ind]["rep"] = rep + 1
             results[ind]["bootstrap"] = boot + 1
     
