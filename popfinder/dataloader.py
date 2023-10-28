@@ -261,7 +261,9 @@ class GeneticData():
         self._retrieve_summary_stats(locs)
         new_data = self._normalize_locations(locs)
 
+        # Reset unknowns and full data
         _, self.unknowns = self.split_unknowns(new_data)
+        self.data = pd.concat([self.knowns, self.unknowns], ignore_index=True)
 
     def _initialize(self, test_size=0.2, seed=123):
 

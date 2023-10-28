@@ -417,6 +417,23 @@ class PopClassifier(object):
         
         return unknown_data
 
+    def update_unknown_samples(self, new_genetic_data, new_sample_data):
+        """
+        Updates the unknown samples in the classifier object.
+
+        Parameters
+        ----------
+        new_genetic_data : str
+            Path to the new genetic data file.
+        new_sample_data : str
+            Path to the new sample data file.
+        
+        Returns
+        -------
+        None.
+        """
+        self.__data.update_unknown_samples(new_genetic_data, new_sample_data)
+
     # Reporting functions below
     def get_classification_summary(self, save=True):
         """
