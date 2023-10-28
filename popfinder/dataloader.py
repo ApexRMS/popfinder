@@ -226,6 +226,43 @@ class GeneticData():
 
         return dataset_list
 
+    def update_unknowns(self, new_genetic_data, new_sample_data):
+                """
+        Reads a .zarr, .vcf, or h5py file containing genetic data 
+        of new samples from unknown origins, replacing the old
+        data for samples from unknown origins stored in the GeneticData
+        object.
+
+        Parameters
+        ----------
+        new_genetic_data : str
+            Path to genetic data file. Can be .zarr, .vcf, or .h5py.
+        new_sample_data : str
+            Path to sample data file. Must be .tsv or .txt and contain the 
+            columns "x" (longitude), "y" (latitude), "pop" (population name),
+            and "sampleID". The "sampleID" must match the sample IDs in 
+            the genetic data file. The "pop" column should be filled with 
+            NAs since the new samples are of unknown origin.
+        """
+
+        self._validate_update_unknowns_inputs(new_genetic_data, new_sample_data)
+
+        # Load genotypes
+        print("loading genotypes")
+        samples, dc = self._load_genotypes(new_genetic_data)
+
+        # Load data and organize for output
+        print("loading sample data")
+        locs = pd.read_csv(new_sample_data, sep="\t")
+        locs = self._sort_samples(locs, samples)
+        locs["alleles"] = list(dc)
+
+        # Normalize location data
+        self._retrieve_summary_stats(locs)
+        new_data = self._normalize_locations(locs)
+
+        _, self.unknowns = self.split_unknowns(new_data)
+
     def _initialize(self, test_size=0.2, seed=123):
 
         self.data = self.read_data()
@@ -249,7 +286,7 @@ class GeneticData():
             gen = allel.GenotypeArray(vcf["calldata/GT"])
             samples = vcf["samples"]
 
-        elif genetic_data.endswith(".locator.hdf5"):
+        elif genetic_data.endswith(".hdf5"):
             h5 = h5py.File(genetic_data, "r")
             dc = np.array(h5["derived_counts"])
             samples = np.array(h5["samples"])
@@ -259,7 +296,7 @@ class GeneticData():
             raise ValueError("genetic_data must have extension 'zarr', 'vcf', or 'hdf5'")
 
         # count derived alleles for biallelic sites
-        if genetic_data.endswith(".locator.hdf5") is False:
+        if genetic_data.endswith(".hdf5") is False:
 
             print("counting alleles")
             ac = gen.to_allele_counts()
@@ -399,11 +436,40 @@ class GeneticData():
         if os.path.exists(self.sample_data) is False:
             raise ValueError("Path to sample_data does not exist")
 
-        if self.sample_data.endswith((".txt", ".tsv", ".csv")) is False:
+        if self.genetic_data.endswith((".zarr", ".vcf", ".hdf5")) is False:
+            raise ValueError("genetic_data must have extension 'zarr', 'vcf', or 'hdf5'")
+
+        if self.sample_data.endswith((".txt", ".tsv")) is False:
             raise ValueError("sample_data must have extension 'txt' or 'tsv'")
 
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs_list = locs.columns.tolist()
         if set(locs_list) != set(["x", "pop", "y", "sampleID"]):
             raise ValueError("sample_data file does not have correct columns")
+
+    def _validate_update_unknowns_inputs(self, new_genetic_data, new_sample_data):
+
+        if not isinstance(new_genetic_data, str):
+            raise ValueError("new_unknowns must be a path to a genetic data file")
+
+        if not isinstance(new_sample_data, str):
+            raise ValueError("new_unknowns must be a path to a sample data file")
+
+        if os.path.exists(new_genetic_data) is False:
+            raise ValueError("Path to new_genetic_data does not exist")
+
+        if os.path.exists(new_sample_data) is False:
+            raise ValueError("Path to new_sample_data does not exist")
+
+        if new_genetic_data.endswith((".zarr", ".vcf", ".hdf5")) is False:
+            raise ValueError("new_genetic_data must have extension 'zarr', 'vcf', or 'hdf5'")
+
+        if new_sample_data.endswith((".txt", ".tsv")) is False:
+            raise ValueError("new_sample_data must have extension 'txt' or 'tsv'")
+
+        locs = pd.read_csv(new_sample_data, sep="\t")
+        locs_list = locs.columns.tolist()
+        if set(locs_list) != set(["x", "pop", "y", "sampleID"]):
+            raise ValueError("sample_data file does not have correct columns")
+
         
