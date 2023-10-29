@@ -6,7 +6,11 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 import os
+import shutil
+from subprocess import call
+import tempfile
 
+import popfinder as pf
 from popfinder.dataloader import GeneticData
 from popfinder._neural_networks import ClassifierNet
 from popfinder._helper import _generate_train_inputs
@@ -35,25 +39,19 @@ class PopClassifier(object):
             output_folder = os.getcwd()
         self.__output_folder = output_folder
         self.__cv_output_folder = os.path.join(output_folder, "cv_results")
-        if not os.path.exists(self.__cv_output_folder):
-            os.makedirs(self.__cv_output_folder)
-        self.__label_enc = None
+        self.__label_enc = data.label_enc
         self.__train_history = None
         self.__best_model = None
         self.__test_results = None # use for cm and structure plot
-        self.__cv_test_results = None
         self.__classification = None # use for assignment plot
         self.__accuracy = None
         self.__precision = None
         self.__recall = None
         self.__f1 = None
         self.__confusion_matrix = None
-        self.__cv_accuracy = None
-        self.__cv_precision = None
-        self.__cv_recall = None
-        self.__cv_f1 = None
-        self.__cv_confusion_matrix = None
         self.__nn_type = "classifier"
+        self.__mp_run = False
+        self.__lowest_val_loss_total = 9999
 
     @property
     def data(self):
@@ -66,6 +64,11 @@ class PopClassifier(object):
     @property
     def output_folder(self):
         return self.__output_folder
+
+    @output_folder.setter
+    def output_folder(self, output_folder):
+        self.__output_folder = output_folder
+        self.__cv_output_folder = os.path.join(output_folder, "cv_results")
 
     @property
     def label_enc(self):
@@ -139,8 +142,9 @@ class PopClassifier(object):
     def nn_type(self):
         return self.__nn_type
 
-    def train(self, epochs=100, valid_size=0.2, cv_splits=1, cv_reps=1,
-              learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None):
+    def train(self, epochs=100, valid_size=0.2, cv_splits=1, nreps=1,
+              learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None,
+              jobs=1, overwrite_results=True):
         """
         Trains the classification neural network.
 
@@ -152,8 +156,8 @@ class PopClassifier(object):
             Proportion of data to use for validation. The default is 0.2.
         cv_splits : int, optional
             Number of cross-validation splits. The default is 1.
-        cv_reps : int, optional
-            Number of cross-validation repetitions. The default is 1.
+        nreps : int, optional
+            Number of repetitions. The default is 1.
         learning_rate : float, optional
             Learning rate for the neural network. The default is 0.001.
         batch_size : int, optional
@@ -162,55 +166,134 @@ class PopClassifier(object):
             Dropout proportion for the neural network. The default is 0.
         bootstraps : int, optional
             Number of bootstraps to perform. The default is None.
+        jobs : int, optional
+            If greater than 1, will use multiprocessing to train the neural network. 
+            The default is 1.
+        overwrite_results : boolean, optional
+            If True, then will clear the output folder before training the new 
+            model. The default is True.
         
         Returns
         -------
         None.
         """
-        self._validate_train_inputs(epochs, valid_size, cv_splits, cv_reps,
+        self._validate_train_inputs(epochs, valid_size, cv_splits, nreps,
                                     learning_rate, batch_size, dropout_prop)
         
-        self.__lowest_val_loss_total = 9999
+        self.__prepare_result_folder(self.output_folder, overwrite_results)
 
-        if bootstraps is not None:
-            self.__bootstrap_results = os.path.join(self.output_folder, "bootstrap_results")
-            if not os.path.exists(self.__bootstrap_results):
-                os.makedirs(self.__bootstrap_results)
+        files = os.listdir(self.output_folder)
+        if (overwrite_results) or (len(files) == 0) or (self.train_history is None):
+            nrep_begin = 0
+            self.__lowest_val_loss_total = 9999 # reset lowest val loss
+            self.__train_history = None # reset train history
+        else:
+            existing_reps = [int(f.split("_")[-2].replace("rep", "")) for f in files if "rep" in f]
+            nrep_begin = max(existing_reps)
+            nreps = nrep_begin + nreps 
+
+        multi_output = (bootstraps is not None) or (nreps is not None)
+
+        if multi_output:
+
+            if bootstraps is None:
+                bootstraps = 1
+            if nreps is None:
+                nreps = nrep_begin + 1
 
             loss_df = pd.DataFrame()
 
-            for i in range(bootstraps):
-                boot_folder = os.path.join(self.__bootstrap_results, f"bootstrap_{i + 1}")
-                if not os.path.exists(boot_folder):
-                    os.makedirs(boot_folder)
+            if jobs == 1:
+                for i in range(bootstraps):
+                    for j in range(nrep_begin, nreps):
+                        #TODO: how does this affect mp results
+                        if not self.__mp_run:
+                            boot_folder = os.path.join(self.output_folder, f"rep{j+1}_boot{i+1}")
+                            if not os.path.exists(boot_folder):
+                                os.makedirs(boot_folder)
+                        else:
+                            boot_folder = self.output_folder
 
-                inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                cv_reps, seed=self.random_state, bootstrap=True)
-                boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
-                                    batch_size, dropout_prop, result_folder = boot_folder)
-                
-                boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
-                boot_loss_df["bootstrap"] = i + 1
-                loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
+                        inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
+                                        nreps, seed=self.random_state, bootstrap=True)
+                        boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
+                                            batch_size, dropout_prop, result_folder = boot_folder, 
+                                            overwrite_results=overwrite_results)
+                        
+                        boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
+                        boot_loss_df["rep"] = j + 1
+                        boot_loss_df["bootstrap"] = i + 1
+                        loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
+            elif jobs > 1:
+                # Create tempfolder
+                tempfolder = tempfile.mkdtemp()
+
+                # Let popfinder know this is a multiprocessing run (affects output folder creation)
+                self.__mp_run = True
+                self.save(save_path=tempfolder)
+
+                # Find path to _mp_training
+                filepath = pf.__file__
+                folderpath = os.path.dirname(filepath)
+
+                # Instead of looping through bootstrap iteration, run in parallel
+                # to speed up training
+                call(["python", folderpath + "/_mp_training.py", "-p", tempfolder,
+                    "-n", str(bootstraps), "--r_start", str(nrep_begin), "-r", str(nreps), 
+                    "-e", str(epochs), "-v", str(valid_size), "-s", str(cv_splits), 
+                    "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop),
+                    "-j", str(jobs)])
+                loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
+
+        # TODO: this never gets called
         else:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                            cv_reps, seed=self.random_state, bootstrap=False)
+                                            nreps, seed=self.random_state, bootstrap=False)
             loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
                                                 batch_size, dropout_prop, result_folder = self.__cv_output_folder)
 
-        self.__train_history = loss_df
-        self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+        # Save training history
+        if self.__train_history is None:
+            self.__train_history = loss_df
+        else:
+            self.__train_history = pd.concat([self.__train_history, loss_df], ignore_index=True)
+       
+       # Determine best model
+        if (jobs == 1) or (not multi_output):
+            self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+        else:
+            best_model_folder, min_split = self.__find_best_model_folder_from_mp()
+            self.__best_model = torch.load(os.path.join(best_model_folder, f"best_model_split{min_split}.pt"))
+            torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
+            self.__clean_mp_folders(nrep_begin, nreps, bootstraps)
 
-    def test(self, best_model_only=True, save=True):
+    # TODO: move below
+    def __find_best_model_folder_from_mp(self):
+        min_loss = self.train_history.iloc[self.train_history[["valid"]].idxmin()]
+        min_rep = min_loss["rep"].values[0]
+        min_boot = min_loss["bootstrap"].values[0]
+        min_split = min_loss["split"].values[0]
+        best_model_folder = os.path.join(self.output_folder, f"rep{min_rep}_boot{min_boot}")
+        return best_model_folder, min_split
+    
+    def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
+        for rep in range(nrep_begin, nreps):
+            for boot in range(bootstraps):
+                folder = os.path.join(self.output_folder, f"rep{rep+1}_boot{boot+1}")
+                os.remove(os.path.join(folder, "best_model.pt"))
+
+
+
+    def test(self, use_best_model=True, save=True):
         """
         Tests the classification neural network.
 
         Parameters
         ----------
-        best_model_only : bool, optional
-            Whether to only test the best model only. If set to False, then will use all
-            models generated from all training repeats and cross-validation splits.
-            The default is True.
+        use_best_model : bool, optional
+            Whether to test using the best model only. If set to False, then will use all
+            models generated from all training repeats and cross-validation splits and
+            provide an ensemble frequency of assignments. The default is True.
         save : bool, optional
             Whether to save the test results to the output folder. The default is True.
         
@@ -238,42 +321,40 @@ class PopClassifier(object):
         y_true = y_test.squeeze()
         y_true_pops = self.label_enc.inverse_transform(y_true)
 
-        # Generate predictions for each cross validation model
-        if not best_model_only and bootstraps is None:
-            self.__cv_test_results = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, 
-                                                                    self.__cv_output_folder)
+        # If not using just the best model, then test using all models
+        if not use_best_model:
+            if bootstraps is None: 
+                bootstraps = 1
+            if reps is None:
+                reps = 1
 
-        elif not best_model_only:
-            # TODO: multiprocess this
-            self.__bootstrap_test_results = pd.DataFrame()
-            for bootstrap in bootstraps:
-                bootstrap_folder = os.path.join(
-                    self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
-                boot_result = self.__test_on_multiple_models(reps, splits, X_test, y_true_pops, bootstrap_folder)
-                self.__bootstrap_test_results = pd.concat([self.__bootstrap_test_results,
-                                                    boot_result])
+            # Tests on all reps, bootstraps, and cv splits
+            self.__test_results = self.__test_on_multiple_models(reps, bootstraps, splits, X_test, y_true_pops)
+            y_pred = self.label_enc.transform(self.__test_results["pred_pop"])
+            y_true = self.label_enc.transform(self.__test_results["true_pop"])
+            y_true_pops = self.label_enc.inverse_transform(y_true)
 
-        # Predict using the best model and revert from label encoder
-        y_pred = self.best_model(X_test).argmax(axis=1)
-        y_pred_pops = self.label_enc.inverse_transform(y_pred)
+        elif use_best_model:
+            # Predict using the best model and revert from label encoder
+            y_pred = self.best_model(X_test).argmax(axis=1)
+            y_pred_pops = self.label_enc.inverse_transform(y_pred)
 
-        self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
-                                            "pred_pop": y_pred_pops})
+            self.__test_results = pd.DataFrame({"true_pop": y_true_pops,
+                                                "pred_pop": y_pred_pops})
 
         if save:
             self.test_results.to_csv(os.path.join(self.output_folder,
-                                     "classifier_test_results.csv"), index=False)
+                                    "classifier_test_results.csv"), index=False)
 
-        self.__calculate_performance(y_true, y_pred, y_true_pops, best_model_only, bootstraps)
+        self.__calculate_performance(y_true, y_pred, y_true_pops, use_best_model, bootstraps)
 
-
-    def assign_unknown(self, best_model_only=True, save=True):
+    def assign_unknown(self, use_best_model=True, save=True):
         """
         Assigns unknown samples to populations using the trained neural network.
 
         Parameters
         ----------
-        best_model_only : bool, optional
+        use_best_model : bool, optional
             Whether to only assign samples to populations using the best model 
             (lowest validation loss during training). If set to False, then will also use all
             models generated from all training repeats and cross-validation splits to
@@ -293,35 +374,36 @@ class PopClassifier(object):
         X_unknown = unknown_data["alleles"]
         X_unknown = _data_converter(X_unknown, None)
 
-        preds = self.best_model(X_unknown).argmax(axis=1)
-        preds = self.label_enc.inverse_transform(preds)
-        unknown_data.loc[:, "assigned_pop"] = preds
+        if use_best_model:
+            preds = self.best_model(X_unknown).argmax(axis=1)
+            preds = self.label_enc.inverse_transform(preds)
+            unknown_data.loc[:, "assigned_pop"] = preds
 
         if "bootstrap" in self.train_history.columns:
             bootstraps = self.train_history["bootstrap"].unique()
         else:
             bootstraps = None
 
-        if not best_model_only and bootstraps is None:
+        if not use_best_model and bootstraps is None:
             self.__pred_array = self.__assign_on_multiple_models(
                 X_unknown, self.__cv_output_folder)
             
             unknown_data = self.__get_most_common_preds(unknown_data)
 
-        elif not best_model_only:
+        elif not use_best_model:
             reps = self.train_history["rep"].unique()
             splits = self.train_history["split"].unique()
             array_width_total = len(bootstraps) * splits.max() * reps.max()
             self.__pred_array = np.zeros(shape=(len(X_unknown), array_width_total))
 
-            for bootstrap in bootstraps:
-                bootstrap_folder = os.path.join(
-                    self.output_folder, "bootstrap_results", f"bootstrap_{bootstrap}")
-                array_width_bootstrap = splits.max() * reps.max()
-                array_end_position = bootstrap * array_width_bootstrap
-                array_start_position = array_end_position - array_width_bootstrap
-                new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
-                self.__pred_array[:, array_start_position:array_end_position] = new_array
+            for rep in reps:
+                for boot in bootstraps:
+                    bootstrap_folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
+                    array_width_bootstrap = splits.max() * reps.max()
+                    array_end_position = boot * array_width_bootstrap
+                    array_start_position = array_end_position - array_width_bootstrap
+                    new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
+                    self.__pred_array[:, array_start_position:array_end_position] = new_array
 
             unknown_data = self.__get_most_common_preds(unknown_data)
 
@@ -334,11 +416,32 @@ class PopClassifier(object):
         
         return unknown_data
 
+    def update_unknown_samples(self, new_genetic_data, new_sample_data):
+        """
+        Updates the unknown samples in the classifier object.
+
+        Parameters
+        ----------
+        new_genetic_data : str
+            Path to the new genetic data file.
+        new_sample_data : str
+            Path to the new sample data file.
+        
+        Returns
+        -------
+        None.
+        """
+        self.__data.update_unknowns(new_genetic_data, new_sample_data)
+
     # Reporting functions below
     def get_classification_summary(self, save=True):
         """
-        Get a summary of the classification performance metrics, including
-        accuracy, precision, recall, and f1 score.
+        Get a summary of the classification performance metrics from running
+        the test() function, including accuracy, precision, recall, and f1 
+        score. Metrics are either based on the best classifier model
+        (use_best_model set to True), or are averaged across the ensemble of 
+        models if tested across all bootstraps, repetitions, and cross 
+        validation splits (use_best_model set to False).
 
         Parameters
         ----------
@@ -353,28 +456,9 @@ class PopClassifier(object):
 
         summary = {
             "metric": ["accuracy", "precision", "recall", "f1"],
-            "best_model_results": [self.accuracy, self.precision, self.recall, self.f1]
+            "value": [self.accuracy, self.precision, self.recall, self.f1]
         }
         summary = pd.DataFrame(summary)
-
-        if "bootstrap" in self.__train_history.columns:
-            summary_bs = {
-                "metric": ["accuracy", "precision", "recall", "f1"],
-                "bootstrap_results": [self.__bs_accuracy, self.__bs_precision,
-                                      self.__bs_recall, self.__bs_f1]
-            }
-            summary_bs = pd.DataFrame(summary_bs)
-            summary = summary.merge(summary_bs, on="metric")
-
-        elif (self.train_history["rep"].nunique() > 1) and \
-            (self.train_history["split"].nunique() > 1):
-            summary_cv = {
-                "metric": ["accuracy", "precision", "recall", "f1"],
-                "cv_results": [self.__cv_accuracy, self.__cv_precision,
-                               self.__cv_recall, self.__cv_f1]
-            }
-            summary_cv = pd.DataFrame(summary_cv)
-            summary = summary.merge(summary_cv, on="metric")
 
         if save:
             summary.to_csv(os.path.join(self.output_folder,
@@ -383,29 +467,16 @@ class PopClassifier(object):
 
         return summary
     
-    def get_confusion_matrix(self, best_model_only=True):
+    def get_confusion_matrix(self):
         """
         Get the confusion matrix for the classification results.
 
-        Parameters
-        ----------
-        best_model_only : bool, optional
-            Whether to retrieve only the confusion matrix data generated by the best model
-            during training. If set to False, then will also retrieve confusion matrix
-            data from bootstrap results or cross-validation results. The default is True.
-
         Returns
         -------
-        numpy.ndarray or list of numpy.ndarray
-            Confusion matrix or list of confusion matrices if best_model_only is False.
+        numpy.ndarray
+            Confusion matrix based on the results of running the test() function.
         """           
-        if best_model_only:
-            return self.confusion_matrix
-        else:
-            if "bootstrap" in self.train_history.columns:
-                return [self.confusion_matrix, self.__bs_confusion_matrix]
-            else:
-                return [self.confusion_matrix, self.__cv_confusion_matrix]
+        return self.confusion_matrix
 
     def rank_site_importance(self, save=True):
         """
@@ -456,7 +527,7 @@ class PopClassifier(object):
 
         if save:
             ranking.to_csv(os.path.join(self.output_folder,
-                          "classifier_site_importance_ranking.csv"),
+                          "rank_site_importance.csv"),
                            index=False)
 
         return ranking
@@ -484,16 +555,13 @@ class PopClassifier(object):
         _plot_training_curve(self.train_history, self.__nn_type,
             self.output_folder, save, facet_by_split_rep)
 
-    def plot_confusion_matrix(self, best_model_only=True, save=True):
+    def plot_confusion_matrix(self, save=True):
         """
-        Plots the confusion matrix.
+        Plots the confusion matrix based on the results from running the test() 
+        function.
         
         Parameters
         ----------
-        best_model_only : bool, optional
-            Whether to create the confusion matrix from results from running the
-            best modely only or from results from running models for all splits
-            and reps. The default is True.
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
         
@@ -501,29 +569,21 @@ class PopClassifier(object):
         -------
         None
         """
-        bootstraps = "bootstrap" in self.train_history.columns
+        _plot_confusion_matrix(self.test_results, self.confusion_matrix,
+            self.nn_type, self.output_folder, save)
 
-        if best_model_only:
-            _plot_confusion_matrix(self.test_results, self.confusion_matrix,
-                self.nn_type, self.output_folder, save)
-        elif bootstraps:
-            _plot_confusion_matrix(self.__bootstrap_test_results, self.__bs_confusion_matrix,
-                self.nn_type, self.__bootstrap_results, save)
-        else:
-            _plot_confusion_matrix(self.cv_test_results, self.cv_confusion_matrix,
-                self.nn_type, self.__cv_output_folder, save)
-
-    def plot_assignment(self, best_model_only=True, save=True, col_scheme="Spectral"):
+    def plot_assignment(self, save=True, col_scheme="Spectral"):
         """
-        Plots the proportion of times each individual from the
-        unknown data was assigned to each population.
+        Plots the results from running the assign_unknown() function. If the 
+        assign_unknown() function is run with use_best_model set to False, then plots 
+        the proportion of times each sample from the unknown data was assigned to each 
+        population across all bootstraps, repetitions, and cross validation splits.
+        If the assign_unknown() function is run with use_best_model set to True, 
+        only plots the assignment based on the results from running the data through 
+        the best classifier model (all assignment frequencies will be 1).
 
         Parameters
         ----------
-        best_model_only : bool, optional
-            Whether to create the assignment plot from results from running the
-            best modely only or from results from running models for all splits
-            and reps. The default is True.
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
         col_scheme : str, optional
@@ -536,14 +596,14 @@ class PopClassifier(object):
         if self.classification is None:
             raise ValueError("No classification results to plot.")
 
-        if best_model_only:
+        if len(np.unique(self.classification.index)) == len(self.classification):
             e_preds = self.classification.copy()
-            folder = self.output_folder
+            use_best_model = True
 
         else:
             pred_df = pd.DataFrame(self.__pred_array)
             for col in pred_df.columns:
-                pred_df[col] = self.__label_enc.inverse_transform(pred_df[col].astype(int))
+                pred_df[col] = self.label_enc.inverse_transform(pred_df[col].astype(int))
 
             classifications = self.classification.copy()
             classifications.reset_index(inplace=True)
@@ -554,15 +614,11 @@ class PopClassifier(object):
                     value_vars=pred_df.columns, 
                     value_name="assigned_pop")
             e_preds.rename(columns={"id": "sampleID"}, inplace=True)
+            use_best_model = False
 
-            if "bootstrap" in self.train_history.columns:
-                folder = self.__bootstrap_results
-            else:
-                folder = self.__cv_output_folder
+        _plot_assignment(e_preds, col_scheme, self.output_folder, self.__nn_type, save, use_best_model)
 
-        _plot_assignment(e_preds, col_scheme, folder, self.__nn_type, save, best_model_only)
-
-    def plot_structure(self, best_model_only=True, save=True, col_scheme="Spectral"):
+    def plot_structure(self, save=True, col_scheme="Spectral"):
         """
         Plots the proportion of times individuals from the
         test data were assigned to the correct population. 
@@ -570,10 +626,6 @@ class PopClassifier(object):
 
         Parameters
         ----------
-        best_model_only : bool, optional
-            Whether to create the structure plot from results from running the
-            best modely only or from results from running models for all splits
-            and reps. The default is True.
         save : bool, optional
             Whether to save the plot to a png file. The default is True.
         col_scheme : str, optional
@@ -583,23 +635,10 @@ class PopClassifier(object):
         -------
         None
         """
-        bootstraps = "bootstrap" in self.train_history.columns
-
-        if best_model_only:
-            preds = pd.DataFrame(self.confusion_matrix,
-                                columns=self.label_enc.classes_,
-                                index=self.label_enc.classes_)
-            folder = self.output_folder
-        elif bootstraps:
-            preds = pd.DataFrame(self.__bs_confusion_matrix,
-                                columns=self.label_enc.classes_,
-                                index=self.label_enc.classes_)
-            folder = self.__bootstrap_results
-        else:
-            preds = pd.DataFrame(self.cv_confusion_matrix,
-                                columns=self.label_enc.classes_,
-                                index=self.label_enc.classes_)
-            folder = self.__cv_output_folder
+        preds = pd.DataFrame(self.confusion_matrix,
+                            columns=self.label_enc.classes_,
+                            index=self.label_enc.classes_)
+        folder = self.output_folder
 
         _plot_structure(preds, col_scheme, self.__nn_type, folder, save)
 
@@ -648,10 +687,7 @@ class PopClassifier(object):
             if not isinstance(output_folder, str):
                 raise TypeError("output_folder must be a string")
 
-            if not os.path.isdir(output_folder):
-                raise ValueError("output_folder must be a valid directory")
-
-    def _validate_train_inputs(self, epochs, valid_size, cv_splits, cv_reps,
+    def _validate_train_inputs(self, epochs, valid_size, cv_splits, nreps,
                                learning_rate, batch_size, dropout_prop):
 
         if not isinstance(epochs, int):
@@ -666,8 +702,8 @@ class PopClassifier(object):
         if not isinstance(cv_splits, int):
             raise TypeError("cv_splits must be an integer")
 
-        if not isinstance(cv_reps, int):
-            raise TypeError("cv_reps must be an integer")
+        if not isinstance(nreps, int):
+            raise TypeError("nreps must be an integer")
 
         if not isinstance(learning_rate, float):
             raise TypeError("learning_rate must be a float")
@@ -686,21 +722,22 @@ class PopClassifier(object):
 
     # Hidden functions below   
     def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
-                          dropout_prop, result_folder):
+                          dropout_prop, result_folder, overwrite_results=True):
 
-        loss_dict = {"rep": [], "split": [], "epoch": [], "train": [], "valid": []}
+        self.__prepare_result_folder(result_folder, overwrite_results)
+
+        loss_dict = {"split": [], "epoch": [], "train": [], "valid": []}
 
         for i, input in enumerate(inputs):
 
             lowest_val_loss_rep = 9999
             split = i % cv_splits + 1
-            rep = int(i / cv_splits) + 1
 
             X_train, y_train, X_valid, y_valid = _split_input_classifier(self, input)
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
 
-            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16,
+            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16, #TODO: make hidden size a parameter
                                 output_size=len(y_train.unique()),
                                 batch_size=batch_size, dropout_prop=dropout_prop)
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
@@ -729,8 +766,7 @@ class PopClassifier(object):
 
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
-                        torch.save(net, os.path.join(result_folder, 
-                                                     f"best_model_split{split}_rep{rep}.pt"))
+                        torch.save(net, os.path.join(result_folder, f"best_model_split{split}.pt"))
 
                     if valid_loss < self.__lowest_val_loss_total:
                         self.__lowest_val_loss_total = valid_loss
@@ -739,51 +775,51 @@ class PopClassifier(object):
                 # Calculate average validation loss
                 avg_valid_loss = valid_loss / len(valid_loader)
 
-                loss_dict["rep"].append(rep)
                 loss_dict["split"].append(split)
                 loss_dict["epoch"].append(epoch)
                 loss_dict["train"].append(avg_train_loss)
                 loss_dict["valid"].append(avg_valid_loss)
 
         return pd.DataFrame(loss_dict)
+    
+    def __prepare_result_folder(self, result_folder, overwrite_results=True):
 
-    def __test_on_multiple_models(self, reps, splits, X_test, y_true_pops, folder):
+        # Make result folder if it doesn't exist
+        if not os.path.exists(result_folder):
+            os.mkdir(result_folder)
+        elif overwrite_results:
+            shutil.rmtree(result_folder)
+            os.mkdir(result_folder)
+
+    def __test_on_multiple_models(self, reps, bootstraps, splits, X_test, y_true_pops):
 
         result_df = pd.DataFrame()
         for rep in reps:
-            for split in splits:
-                model = torch.load(os.path.join(
-                    folder, f"best_model_split{split}_rep{rep}.pt"))
-                y_pred = model(X_test).argmax(axis=1)
-                y_pred_pops = self.label_enc.inverse_transform(y_pred)
-                cv_test_results_temp = pd.DataFrame(
-                    {"rep": rep, "split": split, 
-                     "true_pop": y_true_pops, "pred_pop": y_pred_pops})
-                result_df = pd.concat([result_df, cv_test_results_temp])
+            for boot in bootstraps:
+                for split in splits:
+                    folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
+                    model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
+                    y_pred = model(X_test).argmax(axis=1)
+                    y_pred_pops = self.label_enc.inverse_transform(y_pred)
+                    cv_test_results_temp = pd.DataFrame(
+                        {"rep": rep, "bootstrap": boot, "split": split, 
+                        "true_pop": y_true_pops, "pred_pop": y_pred_pops})
+                    result_df = pd.concat([result_df, cv_test_results_temp])
 
         return result_df
                                     
 
-    def __calculate_performance(self, y_true, y_pred, y_true_pops, best_model_only, bootstraps):
-
-        # Calculate performance metrics for best model    
-        results = self.__organize_performance_metrics(self.test_results, y_true_pops, y_true, y_pred)
-        self.__confusion_matrix, self.__accuracy, self.__precision, self.__recall, self.__f1 = results              
+    def __calculate_performance(self, y_true, y_pred, y_true_pops, use_best_model, bootstraps):
 
         # Calculate ensemble performance metrics if not best model only
-        if not best_model_only and bootstraps is None:
-            y_pred_cv = self.label_enc.transform(self.cv_test_results["pred_pop"])
-            y_true_cv = self.label_enc.transform(self.cv_test_results["true_pop"])
-            results = self.__organize_performance_metrics(
-                self.cv_test_results, y_true_pops, y_true_cv, y_pred_cv)
-            self.__cv_confusion_matrix, self.__cv_accuracy, self.__cv_precision, self.__cv_recall, self.__cv_f1 = results
+        if not use_best_model and bootstraps is None:
+            self.__test_on_cv_splits = True
 
-        elif not best_model_only:
-            y_pred_bs = self.label_enc.transform(self.__bootstrap_test_results["pred_pop"])
-            y_true_bs = self.label_enc.transform(self.__bootstrap_test_results["true_pop"])
-            results = self.__organize_performance_metrics(
-                self.__bootstrap_test_results, y_true_pops, y_true_bs, y_pred_bs)
-            self.__bs_confusion_matrix, self.__bs_accuracy, self.__bs_precision, self.__bs_recall, self.__bs_f1 = results
+        elif not use_best_model:
+            self.__test_on_bootstraps = True
+
+        results = self.__organize_performance_metrics(self.test_results, y_true_pops, y_true, y_pred)
+        self.__confusion_matrix, self.__accuracy, self.__precision, self.__recall, self.__f1 = results
 
     def __organize_performance_metrics(self, result_df, y_true_pops, y_true, y_pred):
         cf = np.round(confusion_matrix(
@@ -807,8 +843,7 @@ class PopClassifier(object):
 
         for rep in reps:
             for split in splits:
-                model = torch.load(os.path.join(
-                    folder, f"best_model_split{split}_rep{rep}.pt"))
+                model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
                 preds = model(X_unknown).argmax(axis=1)
                 array[:, pos] = preds
                 pos += 1
@@ -826,8 +861,8 @@ class PopClassifier(object):
         most_common_count = np.count_nonzero(self.__pred_array == most_common[:, None], axis=1)
         frequency = np.round(most_common_count / self.__pred_array.shape[1], 3)
         most_common = self.label_enc.inverse_transform(most_common.astype(int))
-        unknown_data.loc[:, "most_assigned_pop"] = most_common    
-        unknown_data.loc[:, "frequency"] = frequency
+        unknown_data.loc[:, "most_assigned_pop_across_models"] = most_common    
+        unknown_data.loc[:, "frequency_of_assignment_across_models"] = frequency
 
         return unknown_data
 

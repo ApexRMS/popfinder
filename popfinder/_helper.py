@@ -5,6 +5,7 @@ from sklearn import preprocessing
 import numpy as np
 import dill
 import os
+import sys
 
 def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123, bootstrap=False):
 
@@ -29,7 +30,7 @@ def _split_input_classifier(clf, input):
     y_valid = valid_input["pop"] # one hot encode
 
     # Label encode y values
-    clf.label_enc = preprocessing.LabelEncoder()
+    # clf.label_enc = preprocessing.LabelEncoder()
     y_train = clf.label_enc.fit_transform(y_train)
     y_valid = clf.label_enc.transform(y_valid)
 
@@ -55,9 +56,9 @@ def _split_input_regressor(input):
 def _generate_data_loaders(X_train, y_train, X_valid, y_valid, batch_size=16):
 
     train = TensorDataset(X_train, y_train)
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
     valid = TensorDataset(X_valid, y_valid)
-    valid_loader = DataLoader(valid, batch_size=len(valid.tensors[0]), shuffle=True)
+    valid_loader = DataLoader(valid, batch_size=len(valid.tensors[0]), shuffle=True, drop_last=True)
 
     return train_loader, valid_loader
 
@@ -94,5 +95,6 @@ def _load(load_path=None):
     """
     Loads a saved instance of the class from a pickle file.
     """
+    sys.path.append(os.path.dirname(__file__))
     with open(load_path, "rb") as f:
         return dill.load(f)

@@ -5,18 +5,19 @@ import argparse
 import os
 
 from popfinder.dataloader import GeneticData
-from popfinder.regressor import PopRegressor
+from popfinder.classifier import PopClassifier
+# from popfinder.regressor import PopRegressor
 
 def _train_on_bootstraps(arg_list):
 
     popfinder_path, nboots, epochs, valid_size, cv_splits, cv_reps, learning_rate, batch_size, dropout_prop, rep = arg_list
-    test_locs_final = pd.DataFrame({"bootstrap": [], "sampleID": [], "pop": [], "x": [],
+    test_results_final = pd.DataFrame({"bootstrap": [], "sampleID": [], "pop": [], "x": [],
                                     "y": [], "x_pred": [], "y_pred": []})
-    pred_locs_final = pd.DataFrame({"bootstrap": [], "sampleID": [], "pop": [], 
+    pred_results_final = pd.DataFrame({"bootstrap": [], "sampleID": [], "pop": [], 
                                     "x_pred": [], "y_pred": []})   
     for boot in range(nboots):
 
-        popfinder = PopRegressor.load(os.path.join(popfinder_path, "regressor.pkl"))
+        popfinder = PopClassifier.load(os.path.join(popfinder_path, "classifier.pkl"))
         popfinder.output_folder = os.path.join(popfinder_path, "rep{}".format(rep))
         os.makedirs(popfinder.output_folder, exist_ok=True)
 
@@ -45,27 +46,28 @@ def _train_on_bootstraps(arg_list):
                 dropout_prop=dropout_prop)
         popfinder.test()
         test_locs = popfinder.test_results.copy()
-        test_locs["sampleID"] = test_locs.index
+        # test_locs["sampleID"] = test_locs.index
         test_locs["bootstrap"] = boot
 
         if popfinder.data.unknowns.shape[0] > 0:
 
             pred_locs = popfinder.assign_unknown(save=False)
             pred_locs["bootstrap"] = boot
-            pred_locs_final = pd.concat([pred_locs_final,
-                pred_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+            pred_results_final = pd.concat([pred_results_final,
+                pred_locs[["bootstrap", "sampleID", "true_pop", "pred_pop"]]])
 
-        test_locs_final = pd.concat([test_locs_final,
-            test_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
-
+        # test_results_final = pd.concat([test_results_final,
+        #     test_locs[["bootstrap", "sampleID", "pop", "x", "y", "x_pred", "y_pred"]]])
+        test_results_final = pd.concat([test_results_final,
+                                        test_locs[["bootstrap", "true_pop", "pred_pop"]]])
         
-    return test_locs_final, pred_locs_final
+    return test_results_final, pred_results_final
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", help="Path to PopRegressor object")
+    parser.add_argument("-p", help="Path to PopClassifier object")
     parser.add_argument("-n", help="Number of bootstraps", type=int)
     parser.add_argument("-r", help="Number of repetitions", type=int)
     parser.add_argument("-e", help="Number of epochs", type=int)

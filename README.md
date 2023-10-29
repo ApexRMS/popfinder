@@ -69,7 +69,14 @@ You should now see that "(base)" has been replaced with "(popfinder_env)" at the
 conda config --add channels conda-forge
 ```
 
-5. Install `popfinder` using `conda install`. Installing `popfinder` will also install its dependencies.
+5. Install `pytorch` using `conda install`. The `pytorch` package is required by `popfinder`, but can only be installed using the `pytorch` conda channel.
+
+```
+# Install pytorch
+conda install -c pytorch pytorch
+```
+
+6. Install `popfinder` using `conda install`. Installing `popfinder` will also install its dependencies.
 
 ```
 # Install popfinder
