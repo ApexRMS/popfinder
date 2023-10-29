@@ -94,6 +94,21 @@ def test_genetic_data():
     assert gen_dat.train.empty == False
     assert gen_dat.test.empty == False
 
+def test_update_unknowns():
+    gen_dat = GeneticData(genetic_data="tests/test_data/test.vcf",
+                        sample_data="tests/test_data/testNA.txt")
+
+    old_data = gen_dat.data.copy()
+    old_knowns = gen_dat.knowns.copy()
+    old_unknowns = gen_dat.unknowns.copy()
+
+    gen_dat.update_unknowns(new_genetic_data="tests/test_data/test_new_unknowns.vcf",
+                            new_sample_data="tests/test_data/test_new_unknowns.txt")
+
+    assert gen_dat.data.equals(old_data) == False
+    assert gen_dat.knowns.equals(old_knowns)
+    assert gen_dat.unknowns.equals(old_unknowns) == False
+
 # Test classifier class
 def test_classifier_inputs():
     
@@ -134,7 +149,7 @@ def test_classifier_train():
     with pytest.raises(TypeError, match="cv_splits must be an integer"):
         classifier.train(cv_splits="0.2")
 
-    with pytest.raises(TypeError, match="cv_reps must be an integer"):
+    with pytest.raises(TypeError, match="nreps must be an integer"):
         classifier.train(nreps="0.2")
 
     with pytest.raises(TypeError, match="learning_rate must be a float"):
@@ -164,6 +179,9 @@ def test_classifier_train():
     assert "best_model_split1.pt" in os.listdir(os.path.join(classifier.output_folder, f))
     assert "loss.csv" in os.listdir(os.path.join(classifier.output_folder, f))
 
+    # Reset classifier object
+    classifier = PopClassifier(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+
     # Testing parameter combos
     params = {"jobs": [1, 2],
               "reps": [1, 2],
@@ -174,14 +192,25 @@ def test_classifier_train():
         for rep in params["reps"]:
             for boot in params["bootstraps"]:
                 for split in params["splits"]:
-                    classifier.train(cv_splits=split, nreps=rep, bootstraps=boot, jobs=job)
+                    print(f"Testing job={job}, rep={rep}, boot={boot}, split={split}")
+                    classifier.train(cv_splits=split, nreps=rep, bootstraps=boot, jobs=job, epochs=10)
                     f = f"rep{rep}_boot{boot}"
                     assert "best_model.pt" in os.listdir(classifier.output_folder)
                     assert f in os.listdir(classifier.output_folder)
                     assert f"best_model_split{split}.pt" in os.listdir(os.path.join(classifier.output_folder, f))
                     assert "loss.csv" in os.listdir(os.path.join(classifier.output_folder, f))
-                    assert len(classifier.train_history["rep"].unique()) == reps
-                    assert len(classifier.train_history["bootstrap"].unique()) == bootstraps
+                    assert len(classifier.train_history["rep"].unique()) == rep
+                    assert len(classifier.train_history["bootstrap"].unique()) == boot
+
+    # Non-multiprocessing append to results
+    old_train_history = len(classifier.train_history)
+    classifier.train(nreps=2, bootstraps=2, epochs = 10, overwrite_results=False)
+    assert len(classifier.train_history) == old_train_history + (2 * 2 * 10)
+
+    # Multiprocessing append to results
+    old_train_history = len(classifier.train_history)
+    classifier.train(jobs=2, nreps=2, bootstraps=2, epochs = 10, overwrite_results=False)
+    assert len(classifier.train_history) == old_train_history + (2 * 2 * 10)
 
 def test_classifier_test():
 
@@ -267,6 +296,31 @@ def test_classifier_assign_unknown_and_get_results():
     assert isinstance(site_rank, pd.DataFrame)
     assert site_rank.empty == False
     assert len(classifier.data.data.alleles[0]) == len(site_rank)
+
+def test_classifier_update_unknowns():
+
+    data_obj = GeneticData(genetic_data="tests/test_data/test.vcf", 
+                    sample_data="tests/test_data/testNA.txt")
+    classifier = PopClassifier(data_obj, output_folder=TEST_OUTPUT_FOLDER)
+    classifier.train()
+    classifier.test()
+    classifier.assign_unknown()
+
+    old_data = classifier.data.data.copy()
+    old_knowns = classifier.data.knowns.copy()
+    old_unknowns = classifier.data.unknowns.copy()
+    old_classification_samples = classifier.classification.sampleID.copy()
+
+    classifier.update_unknown_samples(new_genetic_data="tests/test_data/test_new_unknowns.vcf",
+                                      new_sample_data="tests/test_data/test_new_unknowns.txt")
+
+    assert classifier.data.data.equals(old_data) == False
+    assert classifier.data.knowns.equals(old_knowns)
+    assert classifier.data.unknowns.equals(old_unknowns) == False
+
+    classifier.assign_unknown()
+
+    assert classifier.classification.sampleID.equals(old_classification_samples) == False
 
 def test_classifier_save_and_load():
 

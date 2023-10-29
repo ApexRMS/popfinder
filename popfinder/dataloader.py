@@ -227,7 +227,7 @@ class GeneticData():
         return dataset_list
 
     def update_unknowns(self, new_genetic_data, new_sample_data):
-                """
+        """
         Reads a .zarr, .vcf, or h5py file containing genetic data 
         of new samples from unknown origins, replacing the old
         data for samples from unknown origins stored in the GeneticData
@@ -243,6 +243,10 @@ class GeneticData():
             and "sampleID". The "sampleID" must match the sample IDs in 
             the genetic data file. The "pop" column should be filled with 
             NAs since the new samples are of unknown origin.
+
+        Returns
+        -------
+        None
         """
 
         self._validate_update_unknowns_inputs(new_genetic_data, new_sample_data)

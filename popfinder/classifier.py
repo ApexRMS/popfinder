@@ -184,15 +184,12 @@ class PopClassifier(object):
 
         files = os.listdir(self.output_folder)
         if (overwrite_results) or (len(files) == 0) or (self.train_history is None):
-            # bootstrap_begin = 0
             nrep_begin = 0
+            self.__lowest_val_loss_total = 9999 # reset lowest val loss
+            self.__train_history = None # reset train history
         else:
-            #search output folder for largest bootstrap number
-            # existing_bs = [int(f.split("_")[-1].replace("boot", "")) for f in files if "boot" in f]
             existing_reps = [int(f.split("_")[-2].replace("rep", "")) for f in files if "rep" in f]
-            # bootstrap_begin = max(existing_bs)
             nrep_begin = max(existing_reps)
-            # bootstraps = bootstrap_begin + bootstraps
             nreps = nrep_begin + nreps 
 
         multi_output = (bootstraps is not None) or (nreps is not None)
@@ -220,7 +217,8 @@ class PopClassifier(object):
                         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         nreps, seed=self.random_state, bootstrap=True)
                         boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
-                                            batch_size, dropout_prop, result_folder = boot_folder)
+                                            batch_size, dropout_prop, result_folder = boot_folder, 
+                                            overwrite_results=overwrite_results)
                         
                         boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
                         boot_loss_df["rep"] = j + 1
@@ -247,6 +245,7 @@ class PopClassifier(object):
                     "-j", str(jobs)])
                 loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
 
+        # TODO: this never gets called
         else:
             inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                             nreps, seed=self.random_state, bootstrap=False)
@@ -432,7 +431,7 @@ class PopClassifier(object):
         -------
         None.
         """
-        self.__data.update_unknown_samples(new_genetic_data, new_sample_data)
+        self.__data.update_unknowns(new_genetic_data, new_sample_data)
 
     # Reporting functions below
     def get_classification_summary(self, save=True):
@@ -723,9 +722,9 @@ class PopClassifier(object):
 
     # Hidden functions below   
     def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
-                          dropout_prop, result_folder):
+                          dropout_prop, result_folder, overwrite_results=True):
 
-        self.__prepare_result_folder(result_folder)
+        self.__prepare_result_folder(result_folder, overwrite_results)
 
         loss_dict = {"split": [], "epoch": [], "train": [], "valid": []}
 
