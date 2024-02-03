@@ -434,7 +434,7 @@ class PopClassifier(object):
         self.__data.update_unknowns(new_genetic_data, new_sample_data)
 
     # Reporting functions below
-    def get_classification_summary(self, save=True):
+    def get_test_summary(self, save=True):
         """
         Get a summary of the classification performance metrics from running
         the test() function, including accuracy, precision, recall, and f1 
@@ -463,6 +463,42 @@ class PopClassifier(object):
         if save:
             summary.to_csv(os.path.join(self.output_folder,
                           "classifier_classification_summary.csv"),
+                           index=False)
+
+        return summary
+    
+    def get_assignment_summary(self, save=True):
+        """
+        Get a summary of the assignment results from running the assign_unknown()
+        function, including the most commonly assigned population and the
+        frequency of assignment across all bootstraps, repetitions, and cross
+        validation splits.
+        
+        Parameters
+        ----------
+        save : bool, optional
+            Whether to save the results to a csv file. The default is True.
+        
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame containing the assignment summary.
+        """
+        #TODO: test this
+        if self.classification is None:
+            raise ValueError("No classification results to summarize. " + 
+            "Please run the assign_unknown() method first.")
+
+        summary = self.classification.groupby("most_assigned_pop_across_models").\
+            agg({"frequency_of_assignment_across_models": "mean"}).reset_index()
+        summary.rename(columns={"most_assigned_pop_across_models": "population",
+                                "frequency_of_assignment_across_models": "mean_frequency"},
+                                inplace=True)
+        summary = summary.sort_values("mean_frequency", ascending=False)
+
+        if save:
+            summary.to_csv(os.path.join(self.output_folder,
+                          "classifier_assignment_summary.csv"),
                            index=False)
 
         return summary

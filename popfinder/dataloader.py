@@ -76,7 +76,7 @@ class GeneticData():
 
     def read_data(self):
         """
-        Reads a .zarr, .vcf, or h5py file containing genetic data and
+        Reads a .vcf file containing genetic data and
         compiles information into a pandas DataFrame for either a 
         classifier or regressor neural network.
 
@@ -90,16 +90,17 @@ class GeneticData():
         self._validate_read_data_inputs()
 
         # Load genotypes
-        print("loading genotypes")
+        print("Loading genotypes...")
         samples, dc = self._load_genotypes(self.genetic_data)
 
         # Load data and organize for output
-        print("loading sample data")
+        print("Loading sample data...")
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs = self._sort_samples(locs, samples)
         locs["alleles"] = list(dc)
 
         # Normalize location data
+        print("Normalizing locations...")
         self._retrieve_summary_stats(locs)
         locs = self._normalize_locations(locs)
 
@@ -228,7 +229,7 @@ class GeneticData():
 
     def update_unknowns(self, new_genetic_data, new_sample_data):
         """
-        Reads a .zarr, .vcf, or h5py file containing genetic data 
+        Reads a .vcf file containing genetic data 
         of new samples from unknown origins, replacing the old
         data for samples from unknown origins stored in the GeneticData
         object.
@@ -236,7 +237,7 @@ class GeneticData():
         Parameters
         ----------
         new_genetic_data : str
-            Path to genetic data file. Can be .zarr, .vcf, or .h5py.
+            Path to genetic .vcf file.
         new_sample_data : str
             Path to sample data file. Must be .tsv or .txt and contain the 
             columns "x" (longitude), "y" (latitude), "pop" (population name),
@@ -281,34 +282,19 @@ class GeneticData():
 
     def _load_genotypes(self, genetic_data):
 
-        if genetic_data.endswith(".zarr"):
-            callset = zarr.open_group(genetic_data, mode="r")
-            gt = callset["calldata/GT"]
-            gen = allel.GenotypeArray(gt[:])
-            samples = callset["samples"][:]
-
-        elif genetic_data.endswith(".vcf") or genetic_data.endswith(".vcf.gz"):
+        if genetic_data.endswith(".vcf") or genetic_data.endswith(".vcf.gz"):
             vcf = allel.read_vcf(genetic_data, log=sys.stderr)
             gen = allel.GenotypeArray(vcf["calldata/GT"])
             samples = vcf["samples"]
 
-        elif genetic_data.endswith(".hdf5"):
-            h5 = h5py.File(genetic_data, "r")
-            dc = np.array(h5["derived_counts"])
-            samples = np.array(h5["samples"])
-            h5.close()
-
         else:
-            raise ValueError("genetic_data must have extension 'zarr', 'vcf', or 'hdf5'")
+            raise ValueError("genetic_data must have extension 'vcf'")
 
-        # count derived alleles for biallelic sites
-        if genetic_data.endswith(".hdf5") is False:
-
-            print("counting alleles")
-            ac = gen.to_allele_counts()
-            biallel = gen.count_alleles().is_biallelic()
-            dc = np.array(ac[biallel, :, 1], dtype="int_")
-            dc = np.transpose(dc)
+        # Count derived alleles for biallelic sites
+        ac = gen.to_allele_counts()
+        biallel = gen.count_alleles().is_biallelic()
+        dc = np.array(ac[biallel, :, 1], dtype="int_")
+        dc = np.transpose(dc)
 
         return samples, dc
 
@@ -319,21 +305,16 @@ class GeneticData():
             ]).isin(locs.columns).all():
             raise ValueError("sample_data does not have correct columns")
 
+        # Sort sample data so in the same order as the VCF file
         locs["id"] = locs["sampleID"]
         locs.set_index("id", inplace=True)
-
-        # sort loc table so samples are in same order as genotype samples
         locs = locs.reindex(np.array(samples))
-
-        # Create order column for indexing
         locs["order"] = np.arange(0, len(locs))
 
-        # check that all sample names are present
-        if not all(
-            [locs["sampleID"][x] == samples[x] for x in range(len(samples))]
-        ):
+        # Check sample names in input txt file match those in the VCF
+        if not all(np.array(locs["sampleID"]) == samples):
             raise ValueError(
-                "sample ordering failed! Check that sample IDs match VCF.")
+                "Sample IDs in sample_data file do not match VCF.")
 
         return locs
 
@@ -442,8 +423,8 @@ class GeneticData():
         if os.path.exists(self.sample_data) is False:
             raise ValueError("Path to sample_data does not exist")
 
-        if self.genetic_data.endswith((".zarr", ".vcf", ".hdf5")) is False:
-            raise ValueError("genetic_data must have extension 'zarr', 'vcf', or 'hdf5'")
+        if self.genetic_data.endswith((".vcf")) is False:
+            raise ValueError("genetic_data must have extension 'vcf'")
 
         if self.sample_data.endswith((".txt", ".tsv")) is False:
             raise ValueError("sample_data must have extension 'txt' or 'tsv'")

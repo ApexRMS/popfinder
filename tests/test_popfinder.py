@@ -281,12 +281,12 @@ def test_classifier_assign_unknown_and_get_results():
     os.remove(os.path.join(classifier.output_folder,
                             "classifier_assignment_results.csv"))
 
-    class_sum = classifier.get_classification_summary(save=False)
+    class_sum = classifier.get_test_summary(save=False)
     assert isinstance(class_sum, pd.DataFrame)
     assert not os.path.exists(os.path.join(classifier.output_folder,
                               "classifier_classification_summary.csv"))
 
-    classifier.get_classification_summary(save=True)
+    classifier.get_test_summary(save=True)
     assert os.path.exists(os.path.join(classifier.output_folder,
                           "classifier_classification_summary.csv"))
     os.remove(os.path.join(classifier.output_folder,
