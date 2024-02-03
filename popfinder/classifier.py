@@ -267,22 +267,6 @@ class PopClassifier(object):
             torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
             self.__clean_mp_folders(nrep_begin, nreps, bootstraps)
 
-    # TODO: move below
-    def __find_best_model_folder_from_mp(self):
-        min_loss = self.train_history.iloc[self.train_history[["valid"]].idxmin()]
-        min_rep = min_loss["rep"].values[0]
-        min_boot = min_loss["bootstrap"].values[0]
-        min_split = min_loss["split"].values[0]
-        best_model_folder = os.path.join(self.output_folder, f"rep{min_rep}_boot{min_boot}")
-        return best_model_folder, min_split
-    
-    def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
-        for rep in range(nrep_begin, nreps):
-            for boot in range(bootstraps):
-                folder = os.path.join(self.output_folder, f"rep{rep+1}_boot{boot+1}")
-                os.remove(os.path.join(folder, "best_model.pt"))
-
-
 
     def test(self, use_best_model=True, save=True):
         """
@@ -375,9 +359,10 @@ class PopClassifier(object):
         X_unknown = _data_converter(X_unknown, None)
 
         if use_best_model:
-            preds = self.best_model(X_unknown).argmax(axis=1)
-            preds = self.label_enc.inverse_transform(preds)
+            assign_array = self.best_model(X_unknown).argmax(axis=1)
+            preds = self.label_enc.inverse_transform(assign_array)
             unknown_data.loc[:, "assigned_pop"] = preds
+            assign_array = assign_array.numpy().reshape(-1, 1)
 
         if "bootstrap" in self.train_history.columns:
             bootstraps = self.train_history["bootstrap"].unique()
@@ -433,7 +418,7 @@ class PopClassifier(object):
         return unknown_data
 
     def __get_assignment_frequency(self, assign_array):
-        
+
         pred_df = pd.DataFrame(assign_array)
         for col in pred_df.columns:
             pred_df[col] = self.label_enc.inverse_transform(pred_df[col].astype(int))
@@ -521,17 +506,11 @@ class PopClassifier(object):
         pandas.DataFrame
             DataFrame containing the assignment summary.
         """
-        #TODO: test this
         if self.classification is None:
             raise ValueError("No classification results to summarize. " + 
             "Please run the assign_unknown() method first.")
 
-        summary = self.classification.groupby("most_assigned_pop_across_models").\
-            agg({"frequency_of_assignment_across_models": "mean"}).reset_index()
-        summary.rename(columns={"most_assigned_pop_across_models": "population",
-                                "frequency_of_assignment_across_models": "mean_frequency"},
-                                inplace=True)
-        summary = summary.sort_values("mean_frequency", ascending=False)
+        summary = self.__freq_assign
 
         if save:
             summary.to_csv(os.path.join(self.output_folder,
@@ -670,13 +649,13 @@ class PopClassifier(object):
             raise ValueError("No classification results to plot.")
 
         # if len(np.unique(self.classification.index)) == len(self.classification):
-        if self.__pred_array.shape[1] == 1:
-            e_preds = self.classification.copy()
-            use_best_model = True
+        # if self.__pred_array.shape[1] == 1:
+        #     e_preds = self.classification.copy()
+        #     use_best_model = True
 
-        else:
-            e_preds = self.__freq_assign
-            use_best_model = False
+        # else:
+        e_preds = self.__freq_assign
+        use_best_model = False
 
         _plot_assignment(e_preds, col_scheme, self.output_folder, self.__nn_type, save, use_best_model)
 
@@ -928,4 +907,17 @@ class PopClassifier(object):
 
         return unknown_data
 
+    def __find_best_model_folder_from_mp(self):
+        min_loss = self.train_history.iloc[self.train_history[["valid"]].idxmin()]
+        min_rep = min_loss["rep"].values[0]
+        min_boot = min_loss["bootstrap"].values[0]
+        min_split = min_loss["split"].values[0]
+        best_model_folder = os.path.join(self.output_folder, f"rep{min_rep}_boot{min_boot}")
+        return best_model_folder, min_split
+    
+    def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
+        for rep in range(nrep_begin, nreps):
+            for boot in range(bootstraps):
+                folder = os.path.join(self.output_folder, f"rep{rep+1}_boot{boot+1}")
+                os.remove(os.path.join(folder, "best_model.pt"))
 
