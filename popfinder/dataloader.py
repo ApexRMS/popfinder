@@ -131,7 +131,8 @@ class GeneticData():
 
         return known, unknown
 
-    def split_train_test(self, data=None, stratify_by_pop=True, test_size=0.2, seed=123, bootstrap=False):
+    def split_train_test(self, data=None, stratify_by_pop=True, test_size=0.2, 
+                         seed=123, bootstrap=False):
         """
         Splits data into training and testing sets.
         
@@ -328,8 +329,14 @@ class GeneticData():
             stratify=data["pop"],
             random_state=seed, test_size=test_size)
 
-        train = pd.concat([X_train, y_train], axis=1)
-        test = pd.concat([X_test, y_test], axis=1)
+        successful_split = False
+
+        while not successful_split:
+            train = pd.concat([X_train, y_train], axis=1)
+            test = pd.concat([X_test, y_test], axis=1)
+            training_pops = np.unique(train["pop"])
+            testing_pops = np.unique(test["pop"])
+            successful_split = np.array_equal(training_pops, testing_pops)
 
         return train, test
 
