@@ -9,6 +9,7 @@ import sys
 
 def _generate_train_inputs(data_obj, valid_size, cv_splits, cv_reps, seed=123, bootstrap=False):
 
+    # TODO: add validation to ensure all labels in validation/test are seen in training
     if cv_splits == 1:
         train_input, valid_input = data_obj.split_train_test(
             data_obj.train, test_size=valid_size, seed=seed, bootstrap=bootstrap)
