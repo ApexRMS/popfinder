@@ -144,7 +144,7 @@ class PopClassifier(object):
 
     def train(self, epochs=100, valid_size=0.2, cv_splits=1, nreps=1,
               learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None,
-              jobs=1, overwrite_results=True):
+              jobs=1, patience=None, min_delta=0, overwrite_results=True):
         """
         Trains the classification neural network.
 
@@ -170,6 +170,12 @@ class PopClassifier(object):
         jobs : int, optional
             If greater than 1, will use multiprocessing to train the neural network. 
             The default is 1.
+        patience : int, optional
+            Number of epochs to wait before stopping training if validation loss   
+            does not decrease. The default is None.
+        min_delta : float, optional
+            Minimum change in validation loss to be considered an improvement.
+            The default is 0.
         overwrite_results : boolean, optional
             If True, then will clear the output folder before training the new 
             model. The default is True.
@@ -219,6 +225,7 @@ class PopClassifier(object):
                                         nreps, seed=self.random_state, bootstrap=True)
                         boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
                                             batch_size, dropout_prop, result_folder = boot_folder, 
+                                            patience=patience, min_delta=min_delta,
                                             overwrite_results=overwrite_results)
                         
                         boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
@@ -245,13 +252,6 @@ class PopClassifier(object):
                     "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop),
                     "-j", str(jobs)])
                 loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
-
-        # TODO: this never gets called
-        else:
-            inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                            nreps, seed=self.random_state, bootstrap=False)
-            loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
-                                                batch_size, dropout_prop, result_folder = self.__cv_output_folder)
 
         # Save training history
         if self.__train_history is None:
@@ -767,7 +767,8 @@ class PopClassifier(object):
 
     # Hidden functions below   
     def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
-                          dropout_prop, result_folder, overwrite_results=True):
+                          dropout_prop, result_folder, patience, min_delta,
+                          overwrite_results):
 
         self.__prepare_result_folder(result_folder, overwrite_results)
 
@@ -787,6 +788,7 @@ class PopClassifier(object):
                                 batch_size=batch_size, dropout_prop=dropout_prop)
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
             loss_func = nn.CrossEntropyLoss()
+            patience_counter = 0
 
             for epoch in range(epochs):
 
@@ -812,6 +814,11 @@ class PopClassifier(object):
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
                         torch.save(net, os.path.join(result_folder, f"best_model_split{split}.pt"))
+                        
+                    elif ((valid_loss - lowest_val_loss_rep) > min_delta) & (patience is not None): 
+                        patience_counter += 1
+                        if patience_counter > patience:
+                            break
 
                     if valid_loss < self.__lowest_val_loss_total:
                         self.__lowest_val_loss_total = valid_loss
