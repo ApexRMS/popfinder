@@ -91,6 +91,8 @@ def _save(obj, save_path=None, file="model.pkl"):
     with open(os.path.join(save_path, file), "wb") as f:
         dill.dump(obj, f)
 
+    print("Saved to", os.path.join(save_path, file))
+
 def _load(load_path=None):
     """
     Loads a saved instance of the class from a pickle file.

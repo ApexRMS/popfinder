@@ -586,7 +586,8 @@ class PopClassifier(object):
         return ranking
 
     # Plotting functions below
-    def plot_training_curve(self, save=True, facet_by_split_rep=False):
+    def plot_training_curve(self, save=True, facet_by_split_rep=False, 
+                            y_axis_zero=False):
         """
         Plots the training curve.
         
@@ -599,6 +600,8 @@ class PopClassifier(object):
             1 split and rep have been used during training, then the training
             plot will contain variability corresponding to the multiple runs.
             The default is False.
+        y_axis_zero : bool, optional
+            Whether to set the y-axis to start at 0. The default is False.
             
         Returns
         -------
@@ -606,7 +609,7 @@ class PopClassifier(object):
         """
 
         _plot_training_curve(self.train_history, self.__nn_type,
-            self.output_folder, save, facet_by_split_rep)
+            self.output_folder, save, facet_by_split_rep, y_axis_zero)
 
     def plot_confusion_matrix(self, save=True):
         """
@@ -814,7 +817,7 @@ class PopClassifier(object):
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
                         torch.save(net, os.path.join(result_folder, f"best_model_split{split}.pt"))
-                        
+
                     elif ((valid_loss - lowest_val_loss_rep) > min_delta) & (patience is not None): 
                         patience_counter += 1
                         if patience_counter > patience:

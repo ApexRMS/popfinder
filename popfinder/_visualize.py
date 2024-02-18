@@ -6,7 +6,8 @@ import numpy as np
 import itertools
 import os
 
-def _plot_training_curve(train_history, nn_type, output_folder, save, facet_by_split_rep):
+def _plot_training_curve(train_history, nn_type, output_folder, 
+                         save, facet_by_split_rep, y_axis_zero):
 
     plot_data = train_history.rename(columns={"valid": "validation"})
     plot_data = pd.melt(plot_data, id_vars=["epoch", "split", "rep"], 
@@ -20,6 +21,9 @@ def _plot_training_curve(train_history, nn_type, output_folder, save, facet_by_s
                           hue="dataset", hue_kws=d, height=2, aspect=1.5)
     else:
         g = sns.FacetGrid(plot_data, hue="dataset", hue_kws=d, height=2, aspect=1.5)
+
+    if y_axis_zero:
+        g.set(ylim=(0, max(plot_data["loss"])))
     
     g.map(sns.lineplot, "epoch", "loss", lw=0.5)
     g.add_legend(title="")
