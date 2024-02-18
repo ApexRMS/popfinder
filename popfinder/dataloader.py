@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 import allel # change to sgkit eventually
-import zarr
-import h5py
 import sys
 import os
 
@@ -32,19 +30,10 @@ class GeneticData():
         Path to genetic data file. Can be .zarr, .vcf, or .h5py.
     sample_data : str
         Path to sample data file. Must be .tsv or .txt and contain the 
-        columns "x" (longitude), "y" (latitude), "pop" (population name),
-        and "sampleID". The "sampleID" must match the sample IDs in 
-        the genetic data file. 
+        columns "pop" (population name), and "sampleID". The "sampleID" 
+        must match the sample IDs in the genetic data file. 
     seed : int
         Seed for random number generator.
-    meanlong : float
-        Mean longitude of sample data.
-    meanlat : float
-        Mean latitude of sample data.
-    stdlon : float
-        Standard deviation of longitude of sample data.
-    stdlat : float
-        Standard deviation of latitude of sample data.
     
     Methods
     -------
@@ -66,10 +55,6 @@ class GeneticData():
         self.genetic_data = genetic_data
         self.sample_data = sample_data
         self.seed = seed
-        self.meanlong = None
-        self.meanlat = None
-        self.stdlon = None
-        self.stdlat = None
 
         if genetic_data is not None and sample_data is not None:
             self._initialize(test_size=test_size, seed=seed)
@@ -98,11 +83,6 @@ class GeneticData():
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs = self._sort_samples(locs, samples)
         locs["alleles"] = list(dc)
-
-        # Normalize location data
-        print("Normalizing locations...")
-        self._retrieve_summary_stats(locs)
-        locs = self._normalize_locations(locs)
 
         return locs
 
@@ -263,12 +243,8 @@ class GeneticData():
         locs = self._sort_samples(locs, samples)
         locs["alleles"] = list(dc)
 
-        # Normalize location data
-        self._retrieve_summary_stats(locs)
-        new_data = self._normalize_locations(locs)
-
         # Reset unknowns and full data
-        _, self.unknowns = self.split_unknowns(new_data)
+        _, self.unknowns = self.split_unknowns(locs)
         self.data = pd.concat([self.knowns, self.unknowns], ignore_index=True)
 
     def _initialize(self, test_size=0.2, seed=123):
@@ -302,7 +278,7 @@ class GeneticData():
     def _sort_samples(self, locs, samples):
 
         if not pd.Series([
-            "x", "pop", "y", "sampleID"
+            "pop", "sampleID"
             ]).isin(locs.columns).all():
             raise ValueError("sample_data does not have correct columns")
 
@@ -325,7 +301,7 @@ class GeneticData():
             data = self.knowns
 
         X_train, X_test, y_train, y_test = train_test_split(
-            data["alleles"], data[["x", "y", "pop"]],
+            data["alleles"], data[["pop"]],
             stratify=data["pop"],
             random_state=seed, test_size=test_size)
 
@@ -346,58 +322,13 @@ class GeneticData():
             data = self.knowns
 
         X_train, X_test, y_train, y_test = train_test_split(
-        data["alleles"], data[["x", "y", "pop"]],
+        data["alleles"], data[["pop"]],
         random_state=seed, test_size=test_size)
 
         train = pd.concat([X_train, y_train], axis=1)
         test = pd.concat([X_test, y_test], axis=1)
 
         return train, test
-
-    def _retrieve_summary_stats(self, raw_data):
-
-        self.meanlong = np.nanmean(raw_data['x'])
-        self.sdlong = np.nanstd(raw_data['x'])
-        self.meanlat = np.nanmean(raw_data['y'])
-        self.sdlat = np.nanstd(raw_data['y'])
-
-    def _normalize_locations(self, raw_data):
-        """
-        Normalize location corrdinates.
-
-        Parameters
-        ----------
-        raw_data : pd.DataFrame
-            A pandas DataFrame corresponding to the results from `read_data()`.
-
-        Returns
-        -------
-        data : pd.DataFrame
-            A pandas DataFrame with normalized location coordinates.
-        """
-        raw_data["x_norm"] = (raw_data['x'].tolist() - self.meanlong) / self.sdlong
-        raw_data["y_norm"] = (raw_data['y'].tolist() - self.meanlat) / self.sdlat
-
-        return raw_data
-
-    def _unnormalize_locations(self, data):
-        """
-        Unnormalize location corrdinates.
-
-        Parameters
-        ----------
-        data : pd.DataFrame
-            A pandas DataFrame corresponding to the results from `read_data()`.
-
-        Returns
-        -------
-        data : pd.DataFrame
-            A pandas DataFrame with unnormalized location coordinates.
-        """
-        data["x"] = data['x_norm'].tolist() * self.sdlong + self.meanlong
-        data["y"] = data['y_norm'].tolist() * self.sdlat + self.meanlat
-
-        return data
 
     def _validate_init_inputs(self, genetic_data, sample_data, test_size, seed):
 
@@ -438,7 +369,7 @@ class GeneticData():
 
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs_list = locs.columns.tolist()
-        if set(locs_list) != set(["x", "pop", "y", "sampleID"]):
+        if set(locs_list) != set(["pop", "sampleID"]):
             raise ValueError("sample_data file does not have correct columns")
 
     def _validate_update_unknowns_inputs(self, new_genetic_data, new_sample_data):
@@ -463,7 +394,7 @@ class GeneticData():
 
         locs = pd.read_csv(new_sample_data, sep="\t")
         locs_list = locs.columns.tolist()
-        if set(locs_list) != set(["x", "pop", "y", "sampleID"]):
+        if set(locs_list) != set(["pop", "sampleID"]):
             raise ValueError("sample_data file does not have correct columns")
 
         
