@@ -1,0 +1,13 @@
+# python requirements file
+# https://pip.pypa.io/en/stable/user_guide/#requirements-files
+numpy
+pandas
+torch
+scikit-learn
+dill
+seaborn
+matplotlib
+scikit-allel
+scipy
+sphinx
+sphinx_rtd_theme

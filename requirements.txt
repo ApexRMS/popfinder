@@ -6,6 +6,4 @@ dill
 seaborn
 matplotlib
 scikit-allel
-zarr
-h5py
 scipy

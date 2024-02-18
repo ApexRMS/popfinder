@@ -109,19 +109,18 @@ The following usage examples use the genetic data and sample data found in this 
 
 First, install `popfinder` using either `conda install` or `pip install`. See the installation instructions above for more information.
 
-Then, in a new Python script, import the 3 classes of `popfinder`.
+Then, in a new Python script, import the 2 classes of `popfinder`.
 
 ```
 from popfinder.dataloader import GeneticData
 from popfinder.classifier import PopClassifier
-from popfinder.regressor import PopRegressor
 ```
 
 #### Load Data
 
 The `dataloader` module contains the `GeneticData` class. This class is used for loading all genetic data and sample data, as well as preprocessing the data in preparation for running the neural networks.
 
-When creating a new instance of the `GeneticData` class, it must be initialized with a path to the `genetic_data` and a path to the `sample_data`. The genetic data can come in the form of a .vcf, .h5py, or .zarr file, and contains allelic information for each sample. The sample data is a tab-delimited .txt file with the following columns: `x`, `y`, `pop`, and `sampleID`. The sample IDs in the .txt file must match the sample IDs in the genetic data file. If the sample is from an unknown location, then the `x`, `y`, and `pop` columns should have `NA` values.
+When creating a new instance of the `GeneticData` class, it must be initialized with a path to the `genetic_data` and a path to the `sample_data`. The genetic data can come in the form of a .vcf file, and contains allelic information for each sample. The sample data is a tab-delimited .txt file with the following columns: `pop`, and `sampleID`. The sample IDs in the .txt file must match the sample IDs in the genetic data file. If the sample is from an unknown location, then the `pop` column should have an `NA` value.
 
 Run the below code to create an instance of the `GeneticData` class.
 
@@ -130,7 +129,7 @@ data_object = GeneticData(genetic_data="tests/test_data/test.vcf",
                           sample_data="tests/test_data/testNA.txt")
 ```
 
-Upon creating the `GeneticData` instance with the given data, the class will split the data into samples of known versus unknown origin, and of the samples of known origin, it will further split the data into a training and testing dataset. You can access these datasets using the following class attributes.
+Upon creating the `GeneticData` instance with the given data, the class will split the data into samples of known versus unknown origin, and of the samples of known origin, it will further split the data into a training and testing dataset. If there are no samples of unknown origin in the dataset, then the `data.unknowns` will return an empty dataframe. You can access these datasets using the following class attributes.
 
 ```
 # View all loaded data
@@ -209,73 +208,17 @@ You can also retrieve information about which SNPs were most influential in trai
 classifier.rank_site_importance()
 ```
 
-#### Use the regressor module
-
-The `regressor` module contains the `PopRegressor` class. This class is used for training a regressor neural network, using this neural network to perform population assignment, and visualizing the end results.
-
-The only required argument for initializing an instance of this class is an instance of the `GeneticData` class. In our case, this instance is the `data_object` we created in the previous step.
-
-Run the below code to create an instance of the `PopRegressor` class.
-
-```
-regressor = PopRegressor(data_object)
-```
-
-The `regressor` module can be used in two different ways: (1) to retrieve predicted latitudinal/longitudinal coordinates of each sample of unknown origin; or (2) to retrieve predicted population classifications of each sample of unknown origin using kernel density estimates.
-
-**Option 1**
-
-To use the `regressor` module to retrieve predicted geographic coordinates of each sample, you will follow a similar workflow as with the `classifier` module. First, you will need to train the model using your training data.
-
-```
-regressor.train()
-```
-
-Next, evaluate the trained model using the test dataset.
-
-```
-regressor.test()
-```
-
-Finally, use the `assign_unknown()` method to predict locations of samples of unknown origin.
-
-```
-regressor.assign_unknown()
-```
-
-You can view the predicted location in reference to the populations included in your sample data using the `plot_location()` method.
-
-```
-regressor.plot_location()
-```
-
-**Option 2**
-
-The second way to use the `regressor` module is by generating many predicted geographic locations for each sample, then using the kernel density estimates (i.e. contour lines) to classify the population of origin as the one "closest" to the center of the kernel density estimate.
-
-This second option requires training/testing regressor neural networks on many bootstrapped samples. This method requires that you specify the number of bootstrap samples using the `nboots` parameter. The greater the number of bootstraps, the greater the number of predictions and more certain population classifications. Run the below code to implement this method.
-
-```
-regressor.classify_by_contours(nboots=100)
-```
-
-Once completed, you can view the contour maps for each sample of unknown origin to see how the classifications were made.
-
-```
-regressor.plot_contour_map()
-```
-
-![image of contour map](https://github.com/ApexRMS/popfinder/blob/main/figures/contour_LESP_65.png)
+[Insert dataframe of SNP importance]
 
 ### Command Line
 
-You can also run `popfinder` from the command line. To run the classifier from the command line, run the `pop_classifier` function. To run the regressor from the command line, run the `pop_regressor` function. For a full list of methods and arguments for each function, run the `--help` command.
+You can also run `popfinder` from the command line. To run the classifier from the command line, run the `pop_classifier` function. For a full list of methods and arguments for each function, run the `--help` command.
 
 ```
 pop_classifier --help
 ```
 
-The general workflow for using the command line version of `popfinder` is similar to using it in the Python IDE. At each step below, the updated model is loaded from and saved to the `output_folder`. If no `output_folder` is given, the current working directory is used.
+The general workflow for using the command line version of `popfinder` is similar to using it in the Python IDE. At each step below, the updated model is loaded from and saved to the `output_folder`. If no `output_folder` is given, then a folder called `` will be created in the current working directory and all outputs will be saved to this folder.
 
 1. Load the data.
 
@@ -309,4 +252,4 @@ pop_classifier --plot_assignment
 
 ## Reference
 
-TODO: document all classes/methods/command line parameters
+A reference containing all the available classes and methods for `popfinder` can be found on the [documentation website](https://popfinder.readthedocs.io/en/latest/).
