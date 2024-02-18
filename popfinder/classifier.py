@@ -155,7 +155,8 @@ class PopClassifier(object):
         valid_size : float, optional
             Proportion of data to use for validation. The default is 0.2.
         cv_splits : int, optional
-            Number of cross-validation splits. The default is 1.
+            Number of cross-validation splits. If set to 1, then no cross-
+            validation is applied. The default is 1.
         nreps : int, optional
             Number of repetitions. The default is 1.
         learning_rate : float, optional
@@ -742,6 +743,9 @@ class PopClassifier(object):
         
         if not isinstance(cv_splits, int):
             raise TypeError("cv_splits must be an integer")
+        
+        if cv_splits < 1:
+            raise ValueError("cv_splits must be greater than 0")
 
         if not isinstance(nreps, int):
             raise TypeError("nreps must be an integer")
