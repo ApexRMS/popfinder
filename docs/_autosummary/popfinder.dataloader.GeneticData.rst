@@ -18,6 +18,7 @@
       ~GeneticData.split_kfcv
       ~GeneticData.split_train_test
       ~GeneticData.split_unknowns
+      ~GeneticData.update_unknowns
    
    
 

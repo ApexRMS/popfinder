@@ -25,4 +25,3 @@ Then, in a new Python script, import the necessary modules from ``popfinder``.
 
     >>> from popfinder.dataloader import GeneticData
     >>> from popfinder.classifier import PopClassifier
-    >>> from popfinder.regressor import PopRegressor

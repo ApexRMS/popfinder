@@ -15,8 +15,9 @@
    
       ~PopClassifier.__init__
       ~PopClassifier.assign_unknown
-      ~PopClassifier.get_classification_summary
+      ~PopClassifier.get_assignment_summary
       ~PopClassifier.get_confusion_matrix
+      ~PopClassifier.get_test_summary
       ~PopClassifier.load
       ~PopClassifier.plot_assignment
       ~PopClassifier.plot_confusion_matrix
@@ -26,6 +27,7 @@
       ~PopClassifier.save
       ~PopClassifier.test
       ~PopClassifier.train
+      ~PopClassifier.update_unknown_samples
    
    
 

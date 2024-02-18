@@ -10,8 +10,6 @@ API Reference
 
     dataloader.GeneticData
     classifier.PopClassifier
-    regressor.PopRegressor
     cli_classifier
-    cli_regressor
     
 

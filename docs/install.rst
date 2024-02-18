@@ -16,8 +16,6 @@ Dependencies
 * seaborn
 * matplotlib
 * scikit-allel
-* zarr
-* h5py
 * scipy
 
 Using conda
@@ -58,8 +56,8 @@ You should now see that "(base)" has been replaced with "(myenv)" at the beginni
 	# Install popfinder
 	conda install popfinder
 
-	# Install any dependencies that are missing
-	conda install numpy pandas torch scikit-learn dill seaborn matplotlib scikit-allel zarr h5py scipy
+	# Install pytorch from the pytorch channel
+	conda install -c pytorch pytorch
 
 ``popfinder`` should now be installed and ready to use!
 
