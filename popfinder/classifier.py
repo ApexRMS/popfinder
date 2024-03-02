@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score, matthews_corrcoef
 from sklearn.preprocessing import OneHotEncoder
 from collections import Counter
 import numpy as np
@@ -38,7 +38,6 @@ class PopClassifier(object):
         if output_folder is None:
             output_folder = os.join.path(os.getdcwd(), "popfinder_results")
         self.__output_folder = output_folder
-        self.__cv_output_folder = os.path.join(output_folder, "cv_results")
         self.__label_enc = data.label_enc
         self.__train_history = None
         self.__best_model = None
@@ -775,7 +774,9 @@ class PopClassifier(object):
 
         self.__prepare_result_folder(result_folder, overwrite_results)
 
-        loss_dict = {"split": [], "epoch": [], "train": [], "valid": []}
+        loss_dict = {"split": [], "epoch": [], "train_loss": [], "valid_loss": [],
+                     "valid_accuracy": [], "valid_precision": [], "valid_recall": [],
+                     "valid_f1": [], "valid_mcc": []}
 
         for i, input in enumerate(inputs):
 
@@ -813,6 +814,8 @@ class PopClassifier(object):
                     output = net(data)
                     loss = loss_func(output.squeeze(), target.squeeze().long())
                     valid_loss += loss.data.item()
+                    # Calculate accuracy, precision, recall, f1, and MCC
+                    acc, prec, rec, f1, mcc = self.__calculate_performance_metrics(output, target)
 
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
@@ -832,10 +835,27 @@ class PopClassifier(object):
 
                 loss_dict["split"].append(split)
                 loss_dict["epoch"].append(epoch)
-                loss_dict["train"].append(avg_train_loss)
-                loss_dict["valid"].append(avg_valid_loss)
+                loss_dict["train_loss"].append(avg_train_loss)
+                loss_dict["valid_loss"].append(avg_valid_loss)
+                loss_dict["valid_accuracy"].append(acc)
+                loss_dict["valid_precision"].append(prec)
+                loss_dict["valid_recall"].append(rec)
+                loss_dict["valid_f1"].append(f1)
+                loss_dict["valid_mcc"].append(mcc)
 
         return pd.DataFrame(loss_dict)
+    
+    def __calculate_performance_metrics(self, output, target):
+
+        y_pred = output.argmax(axis=1)
+        y_true = target.squeeze().long()
+        acc = accuracy_score(y_true, y_pred)
+        prec = precision_score(y_true, y_pred, average="weighted")
+        rec = recall_score(y_true, y_pred, average="weighted")
+        f1 = f1_score(y_true, y_pred, average="weighted")
+        mcc = matthews_corrcoef(y_true, y_pred)
+
+        return acc, prec, rec, f1, mcc
     
     def __prepare_result_folder(self, result_folder, overwrite_results=True):
 
@@ -922,7 +942,7 @@ class PopClassifier(object):
         return unknown_data
 
     def __find_best_model_folder_from_mp(self):
-        min_loss = self.train_history.iloc[self.train_history[["valid"]].idxmin()]
+        min_loss = self.train_history.iloc[self.train_history[["valid_loss"]].idxmin()]
         min_rep = min_loss["rep"].values[0]
         min_boot = min_loss["bootstrap"].values[0]
         min_split = min_loss["split"].values[0]

@@ -9,7 +9,8 @@ import os
 def _plot_training_curve(train_history, nn_type, output_folder, 
                          save, facet_by_split_rep, y_axis_zero):
 
-    plot_data = train_history.rename(columns={"valid": "validation"})
+    plot_data = train_history.rename(columns={"valid_loss": "validation",
+                                              "train_loss": "train"})
     plot_data = pd.melt(plot_data, id_vars=["epoch", "split", "rep"], 
             value_vars=["train", "validation"], 
             var_name="dataset", value_name="loss")

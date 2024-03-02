@@ -139,3 +139,5 @@ test3/
 tbmu_data/
 tbmu_workflow_results/
 tbmu-workflow.py
+tbmu_results/
+sim_data.py

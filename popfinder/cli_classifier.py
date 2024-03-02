@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--sample_data', type=str, default=None, help='Path to sample data file.')
     parser.add_argument('--test_size', type=float, default=0.2, help='Proportion of samples to use for testing.')
     parser.add_argument('--seed', type=int, default=123, help='Random seed for splitting data into training and testing sets.')
-    parser.add_argument('--output_folder', type=str, default=None, help='Path to output folder. (Default: current directory)')
+    parser.add_argument('--output_folder', type=str, default=None, help='Path to output folder. (Default: folder created in current directory)')
 
     # Arguments for training
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train for.')
