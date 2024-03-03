@@ -52,7 +52,7 @@ Follow these steps to get started with `conda` and use `conda` to install `popfi
 
 3. You can either install `popfinder` and its dependencies into your base environment, or set up a new `conda` environment (recommended). Run the code below to set up and activate a new `conda` environment called "popfinder_env" that uses Python 3.10.
 
-```
+```bash
 # Create new conda environment
 conda create -n popfinder_env python=3.10
 
@@ -64,21 +64,21 @@ You should now see that "(base)" has been replaced with "(popfinder_env)" at the
 
 4. Set the package channel for `conda`. To be able to install the dependencies for `popfinder`, you need to access the `conda-forge` package channel. To configure this channel, run the following code in the Anaconda Prompt.
 
-```
+```bash
 # Set conda-forge package channel
 conda config --add channels conda-forge
 ```
 
 5. Install `pytorch` using `conda install`. The `pytorch` package is required by `popfinder`, but can only be installed using the `pytorch` conda channel.
 
-```
+```bash
 # Install pytorch
 conda install -c pytorch pytorch
 ```
 
 6. Install `popfinder` using `conda install`. Installing `popfinder` will also install its dependencies.
 
-```
+```bash
 # Install popfinder
 conda install popfinder
 ```
@@ -91,7 +91,7 @@ Use `pip` to install `popfinder` to your default python installation. You can in
 
 Install `popfinder` using `pip install`. Installing `popfinder` will also install its dependencies.
 
-```
+```bash
 # Make sure you are using the latest version of pip
 pip install --upgrade pip
 
@@ -111,7 +111,7 @@ First, install `popfinder` using either `conda install` or `pip install`. See th
 
 Then, in a new Python script, import the 2 classes of `popfinder`.
 
-```
+```python
 from popfinder.dataloader import GeneticData
 from popfinder.classifier import PopClassifier
 ```
@@ -124,14 +124,14 @@ When creating a new instance of the `GeneticData` class, it must be initialized 
 
 Run the below code to create an instance of the `GeneticData` class.
 
-```
+```python
 data_object = GeneticData(genetic_data="tests/test_data/test.vcf",
                           sample_data="tests/test_data/testNA.txt")
 ```
 
 Upon creating the `GeneticData` instance with the given data, the class will split the data into samples of known versus unknown origin, and of the samples of known origin, it will further split the data into a training and testing dataset. If there are no samples of unknown origin in the dataset, then the `data.unknowns` will return an empty dataframe. You can access these datasets using the following class attributes.
 
-```
+```python
 # View all loaded data
 data_object.data
 
@@ -156,19 +156,19 @@ The only required argument for initializing an instance of this class is an inst
 
 Run the below code to create an instance of the `PopClassifier` class.
 
-```
+```python
 classifier = PopClassifier(data_object)
 ```
 
 Next, we will train our `classifier`. This will allow the neural network to learn our data so it can make more accurate predictions.
 
-```
+```python
 classifier.train()
 ```
 
 We can view the training history of our `classifier` using the below method. This will generate a plot that shows the loss of the neural network on the training data versus the loss on the validation data. A well-trained model should show converging loss values for the training and validation by the last epoch.
 
-```
+```python
 classifier.plot_training_curve()
 ```
 
@@ -176,13 +176,13 @@ classifier.plot_training_curve()
 
 Once we are satisfied with the training of our model, we can use the `test()` method to evaluate our trained model.
 
-```
+```python
 classifier.test()
 ```
 
 We can visualize the accuracy, precision, and recall of the model by plotting a confusion matrix from the test results. The confusion matrix has the true population of origin along the Y-axis and the predicted population of origin along the X-axis. The scores along the diagonal represent the proportion of times samples from a given population were correctly assigned to that population.
 
-```
+```python
 classifier.plot_confusion_matrix()
 ```
 
@@ -190,13 +190,13 @@ classifier.plot_confusion_matrix()
 
 Finally, we can use our trained and tested model to assign individuals of unknown origin to populations.
 
-```
+```python
 classifier.assign_unknowns()
 ```
 
 After running the above code, we can either display a dataframe or view a plot of assignment probabilities for each sample.
 
-```
+```python
 classifier.plot_assignment()
 ```
 
@@ -204,17 +204,61 @@ classifier.plot_assignment()
 
 You can also retrieve information about which SNPs were most influential in training the model using the `rank_site_importance()` method. This method will return a dataframe containing information about each SNP and the corresponding error when the SNP is randomized during model training and validation. In the dataframe, SNPs that have a higher error value also have greater influence on the model, and by extension play a greater role in population assignment.
 
-```
+```python
 classifier.rank_site_importance()
 ```
 
 [Insert dataframe of SNP importance]
 
+### Hyperparameter tuning
+
+The `tuning` module contains the `hyperparam_search` function. This function is used to perform a grid search or a random search over a range of hyperparameters for the neural network. The function will train and test a model for each combination of hyperparameters and return a dataframe of performance metrics to help you select which hyperparameters to use for the final model.
+
+First, load the `hyperparam_search` function from the `tuning` module.
+
+```python
+from popfinder.tuning import hyperparam_search
+```
+
+Next, decide which hyperparameters you would like to search over. You can choose values for the number of epochs, the learning rate, the dropout proportion, and the batch size.
+
+```python
+epoch_options = [10, 20, 30]
+learning_options = [0.001, 0.01, 0.1]
+dropout_options = [0.1, 0.2, 0.3]
+batch_options = [32, 64, 128]
+```
+
+Then, run the `hyperparam_search` function. This function requires an instance of the `PopClassifier` class, and the hyperparameters you would like to search over. The function will return a dataframe of performance metrics for each combination of hyperparameters. If you would like to perform a random search instead of a grid search, you can set the `trials` argument to the number of random combinations of hyperparameters you would like to try.
+
+```python
+classifier = PopClassifier(data_object)
+results = hyperparam_search(classifier, cv_splits=5, learning_rate=learning_options, 
+                            dropout_prop=dropout_options, batch_size=batch_options, 
+                            epochs=epoch_options)
+```
+
+Depending on the metric you would like to use to choose your model hyperparameters, you can search the dataframe for the best hyperparameters. For example, if you would like to choose the hyperparameters that maximize the Matthews Correlation Coefficient (MCC), you can use the following code.
+
+```python
+best_hyperparams = results.loc[results['valid_mcc'].idxmax()]
+```
+
+Finally, you are ready to train your model!
+```python
+classifier.train(epochs=best_hyperparams['epochs'], 
+                 learning_rate=best_hyperparams['lr'], 
+                 dropout_prop=best_hyperparams['drop_prop'], 
+                 batch_size=best_hyperparams['batch_size'])
+
+```
+
+
 ### Command Line
 
 You can also run `popfinder` from the command line. To run the classifier from the command line, run the `pop_classifier` function. For a full list of methods and arguments for each function, run the `--help` command.
 
-```
+```bash
 pop_classifier --help
 ```
 
@@ -222,31 +266,31 @@ The general workflow for using the command line version of `popfinder` is simila
 
 1. Load the data.
 
-```
+```bash
 pop_classifier --load_data --genetic_data="tests/test_data/test.vcf" --sample_data="tests/test_data/testNA.txt"
 ```
 
 2. Train the model.
 
-```
+```bash
 pop_classifier --train
 ```
 
 3. Evaluate the model on the test dataset.
 
-```
+```bash
 pop_classifier --test
 ```
 
 4. Perform population assignment with the trained/tested model.
 
-```
+```bash
 pop_classifier --assign
 ```
 
 The output folder will contain results files, such as model evaluation statistics and a dataframe of sample population assignments. You can also generate plots based on the model results that will be saved to the output folder, such as the following:
 
-```
+```bash
 pop_classifier --plot_assignment
 ```
 

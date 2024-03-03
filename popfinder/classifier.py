@@ -141,16 +141,14 @@ class PopClassifier(object):
     def nn_type(self):
         return self.__nn_type
 
-    def train(self, epochs=100, valid_size=0.2, cv_splits=1, nreps=1,
-              learning_rate=0.001, batch_size=16, dropout_prop=0, bootstraps=None,
-              jobs=1, patience=None, min_delta=0, overwrite_results=True):
+    def train(self, valid_size=0.2, cv_splits=1, nreps=1, bootstraps=None,
+              patience=None, min_delta=0, learning_rate=0.001, batch_size=16, dropout_prop=0, 
+              epochs=100, jobs=1, overwrite_results=True):
         """
         Trains the classification neural network.
 
         Parameters
         ----------
-        epochs : int, optional
-            Number of epochs to train the neural network. The default is 100.
         valid_size : float, optional
             Proportion of data to use for validation. The default is 0.2.
         cv_splits : int, optional
@@ -158,23 +156,25 @@ class PopClassifier(object):
             validation is applied. The default is 1.
         nreps : int, optional
             Number of repetitions. The default is 1.
-        learning_rate : float, optional
-            Learning rate for the neural network. The default is 0.001.
-        batch_size : int, optional
-            Batch size for the neural network. The default is 16.
-        dropout_prop : float, optional
-            Dropout proportion for the neural network. The default is 0.
         bootstraps : int, optional
             Number of bootstraps to perform. The default is None.
-        jobs : int, optional
-            If greater than 1, will use multiprocessing to train the neural network. 
-            The default is 1.
         patience : int, optional
             Number of epochs to wait before stopping training if validation loss   
             does not decrease. The default is None.
         min_delta : float, optional
             Minimum change in validation loss to be considered an improvement.
             The default is 0.
+        learning_rate : float, optional
+            Learning rate for the neural network. The default is 0.001.
+        batch_size : int, optional
+            Batch size for the neural network. The default is 16.
+        dropout_prop : float, optional
+            Dropout proportion for the neural network. The default is 0.
+        epochs : int, optional
+            Number of epochs to train the neural network. The default is 100.
+        jobs : int, optional
+            If greater than 1, will use multiprocessing to train the neural network. 
+            The default is 1.
         overwrite_results : boolean, optional
             If True, then will clear the output folder before training the new 
             model. The default is True.
@@ -223,7 +223,7 @@ class PopClassifier(object):
                         inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
                                         nreps, seed=self.random_state, bootstrap=True)
                         boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
-                                            batch_size, dropout_prop, result_folder = boot_folder, 
+                                            int(batch_size), dropout_prop, result_folder = boot_folder, 
                                             patience=patience, min_delta=min_delta,
                                             overwrite_results=overwrite_results)
                         
@@ -734,8 +734,11 @@ class PopClassifier(object):
     def _validate_train_inputs(self, epochs, valid_size, cv_splits, nreps,
                                learning_rate, batch_size, dropout_prop):
 
-        if not isinstance(epochs, int):
+        if not isinstance(epochs, (int, float, complex)):
             raise TypeError("epochs must be an integer")
+
+        if epochs < 1:
+            raise ValueError("epochs must be greater than 0")
         
         if not isinstance(valid_size, float):
             raise TypeError("valid_size must be a float")
@@ -751,6 +754,9 @@ class PopClassifier(object):
 
         if not isinstance(nreps, int):
             raise TypeError("nreps must be an integer")
+        
+        if nreps < 1:
+            raise ValueError("nreps must be greater than 0")
 
         if not isinstance(learning_rate, float):
             raise TypeError("learning_rate must be a float")
@@ -758,8 +764,11 @@ class PopClassifier(object):
         if learning_rate > 1 or learning_rate < 0:
             raise ValueError("learning_rate must be between 0 and 1")
 
-        if not isinstance(batch_size, int):
+        if not isinstance(batch_size, (int, float, complex)):
             raise TypeError("batch_size must be an integer")
+        
+        if batch_size < 1:
+            raise ValueError("batch_size must be greater than 0")
 
         if not isinstance(dropout_prop, float) and not isinstance(dropout_prop, int):
             raise TypeError("dropout_prop must be a float")
@@ -794,7 +803,7 @@ class PopClassifier(object):
             loss_func = nn.CrossEntropyLoss()
             patience_counter = 0
 
-            for epoch in range(epochs):
+            for epoch in range(int(epochs)):
 
                 train_loss = 0
                 valid_loss = 0
@@ -850,9 +859,9 @@ class PopClassifier(object):
         y_pred = output.argmax(axis=1)
         y_true = target.squeeze().long()
         acc = accuracy_score(y_true, y_pred)
-        prec = precision_score(y_true, y_pred, average="weighted")
-        rec = recall_score(y_true, y_pred, average="weighted")
-        f1 = f1_score(y_true, y_pred, average="weighted")
+        prec = precision_score(y_true, y_pred, average="weighted", labels=np.unique(y_pred))
+        rec = recall_score(y_true, y_pred, average="weighted", labels=np.unique(y_pred))
+        f1 = f1_score(y_true, y_pred, average="weighted", labels=np.unique(y_pred))
         mcc = matthews_corrcoef(y_true, y_pred)
 
         return acc, prec, rec, f1, mcc

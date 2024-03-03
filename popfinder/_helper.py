@@ -88,6 +88,10 @@ def _save(obj, save_path=None, file="model.pkl"):
     """
     if save_path is None:
         save_path = obj.output_folder
+
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+        
     with open(os.path.join(save_path, file), "wb") as f:
         dill.dump(obj, f)
 
