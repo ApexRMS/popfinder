@@ -247,8 +247,8 @@ class PopClassifier(object):
                 # to speed up training
                 call(["python", folderpath + "/_mp_training.py", "-p", tempfolder,
                     "-n", str(bootstraps), "--r_start", str(nrep_begin), "-r", str(nreps), 
-                    "-e", str(epochs), "-v", str(valid_size), "-s", str(cv_splits), 
-                    "-l", str(learning_rate), "-b", str(batch_size), "-d", str(dropout_prop),
+                    "-e", str(int(epochs)), "-v", str(valid_size), "-s", str(cv_splits), 
+                    "-l", str(learning_rate), "-b", str(int(batch_size)), "-d", str(dropout_prop),
                     "-j", str(jobs)])
                 loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
 
@@ -799,6 +799,7 @@ class PopClassifier(object):
             net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16, #TODO: make hidden size a parameter
                                 output_size=len(y_train.unique()),
                                 batch_size=batch_size, dropout_prop=dropout_prop)
+            # TODO: try adding SGD and LBFGS optimizers
             optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
             loss_func = nn.CrossEntropyLoss()
             patience_counter = 0
