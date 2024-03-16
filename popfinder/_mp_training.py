@@ -11,12 +11,7 @@ from classifier import PopClassifier
 def _train_on_bootstraps(clf_object, train_args):
     
     # Train on new training set
-    clf_object.train(epochs=train_args["epochs"],
-                            valid_size=train_args["valid_size"],
-                            cv_splits=train_args["cv_splits"],
-                            learning_rate=train_args["learning_rate"],
-                            batch_size=train_args["batch_size"],
-                            dropout_prop=train_args["dropout_prop"])
+    clf_object.train(**train_args)
     # Save trained model to output folder
     # clf_object.save()
 
@@ -58,36 +53,53 @@ def create_classifier_objects(rep_start, nreps, nboots, popfinder_path):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", help="Path to PopClassifier object")
-    parser.add_argument("-n", help="Number of bootstraps", type=int)
-    parser.add_argument("--r_start", help="Starting repetition number", type=int)
-    parser.add_argument("-r", help="Number of repetitions", type=int)
-    parser.add_argument("-e", help="Number of epochs", type=int)
-    parser.add_argument("-v", help="Validation size", type=float)
-    parser.add_argument("-s", help="Number of cross-validation splits", type=int)
-    parser.add_argument("-l", help="Learning rate", type=float)
-    parser.add_argument("-b", help="Batch size", type=int)
-    parser.add_argument("-d", help="Dropout proportion", type=float)
-    parser.add_argument("-j", help="Number of jobs", type=int)
+    parser.add_argument("--path", help="Path to PopClassifier object")
+    parser.add_argument("--validsize", help="Validation size", type=float)
+    parser.add_argument("--cvsplits", help="Number of cross-validation splits", type=int)
+    parser.add_argument("--repstart", help="Starting repetition number", type=int)
+    parser.add_argument("--nreps", help="Number of repetitions", type=int)
+    parser.add_argument("--nboots", help="Number of bootstraps", type=int)
+    parser.add_argument(
+        "--patience", 
+        help="Number of epochs to wait for improvement before stopping training", 
+        type=int)
+    parser.add_argument(
+        "--mindelta", 
+        help="Minimum change in loss to be considered an improvement", 
+        type=float)
+    parser.add_argument("--learningrate", help="Learning rate", type=float)
+    parser.add_argument("--batchsize", help="Batch size", type=int)
+    parser.add_argument("--dropout", help="Dropout proportion", type=float)
+    parser.add_argument("--hiddensize", help="Hidden layer size", type=int)
+    parser.add_argument("--hiddenlayers", help="Number of hidden layers", type=int)
+    parser.add_argument("--epochs", help="Number of epochs", type=int)   
+    parser.add_argument("--jobs", help="Number of jobs", type=int)
+
     args = parser.parse_args()
-    popfinder_path = args.p
-    nboots = args.n
-    rep_start = args.r_start
-    nreps = args.r
-    epochs = args.e 
-    valid_size = args.v 
-    cv_splits = args.s
-    learning_rate = args.l 
-    batch_size = args.b
-    dropout_prop = args.d
-    num_jobs = args.j
+    popfinder_path = args.path
+    valid_size = args.validsize 
+    cv_splits = args.cvsplits
+    rep_start = args.repstart
+    nreps = args.nreps
+    nboots = args.nboots
+    patience = args.patience
+    min_delta = args.mindelta
+    learning_rate = args.learningrate
+    batch_size = args.batchsize
+    dropout_prop = args.dropout
+    hidden_size = args.hiddensize
+    hidden_layers = args.hiddenlayers
+    epochs = args.epochs
+    num_jobs = args.jobs
 
     # Generate inputs
     classifier_objects = create_classifier_objects(rep_start, nreps, nboots, popfinder_path)
     # Create dictionary of train args
-    train_args = {"epochs": epochs, "valid_size": valid_size, "cv_splits": cv_splits,
+    train_args = {"valid_size": valid_size, "cv_splits": cv_splits, "nreps": nreps, 
+                  "bootstraps": nboots, "patience": patience, "min_delta": min_delta,
                   "learning_rate": learning_rate, "batch_size": batch_size,
-                  "dropout_prop": dropout_prop}
+                  "dropout_prop": dropout_prop, "hidden_size": hidden_size,
+                  "hidden_layers": hidden_layers, "epochs": epochs}
 
     if num_jobs == -1:
         num_jobs = mp.cpu_count()

@@ -7,7 +7,7 @@ from popfinder.classifier import PopClassifier
 def hyperparam_search(classifier, trials=None, valid_size=0.2, 
                       cv_splits=1, nreps=1, bootstraps=1, patience=10, 
                       min_delta=0.001, learning_rate=[0.01], dropout_prop=[0.025], 
-                      batch_size=[16], epochs=[100], jobs=1):
+                      batch_size=[16], epochs=[100], jobs=1, hyperparam_dict={}):
     """
     Perform grid search or random search hyperparameter optimization for a 
     PopClassifier object.
@@ -42,6 +42,13 @@ def hyperparam_search(classifier, trials=None, valid_size=0.2,
         List of numbers of epochs to test. The default is [100].
     jobs : int, optional
         Number of jobs to run in parallel. The default is 1.
+    hyperparam_dict : optional
+        Dictionary of additional hyperparameters for the optimizer. For Adam, can include
+        beta1, beta2, weight_decay, and epsilon. For SGD, can include 
+        momentum, dampening, weight_decay, and nesterov. For LBFGS, can include
+        max_iter, max_eval, tolerance_grad, tolerance_change, history_size, and
+        line_search_fn. See the pytorch documentation for more details.
+
     
     Returns
     -------
@@ -49,10 +56,12 @@ def hyperparam_search(classifier, trials=None, valid_size=0.2,
         A dataframe containing the results of the grid search. 
     """
 
-    hyperparam_dict = dict({"lr": learning_rate,
-                            "drop_prop": dropout_prop,
-                            "batch_size": batch_size,
-                            "epochs": epochs})
+    #TODO: test
+    additional_params = dict({"lr": learning_rate,
+                              "drop_prop": dropout_prop,
+                              "batch_size": batch_size,
+                              "epochs": epochs})
+    hyperparam_dict = {**additional_params, **hyperparam_dict}
 
     # Create list of hyperparameter combinations
     hyperparams = list(product(*[hyperparam_dict[hp] for hp in hyperparam_dict]))

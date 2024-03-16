@@ -51,6 +51,7 @@ class PopClassifier(object):
         self.__nn_type = "classifier"
         self.__mp_run = False
         self.__lowest_val_loss_total = 9999
+        self.__optimizer = None
 
     @property
     def data(self):
@@ -118,32 +119,21 @@ class PopClassifier(object):
         return self.__confusion_matrix
 
     @property
-    def cv_accuracy(self):
-        return self.__cv_accuracy
-
-    @property
-    def cv_precision(self):
-        return self.__cv_precision
-
-    @property
-    def cv_recall(self):
-        return self.__cv_recall
-
-    @property
-    def cv_f1(self):
-        return self.__cv_f1
-    
-    @property
-    def cv_confusion_matrix(self):
-        return self.__cv_confusion_matrix
-
-    @property
     def nn_type(self):
         return self.__nn_type
+    
+    @property
+    def optimizer(self):
+        return self.__optimizer
+    
+    @optimizer.setter
+    def optimizer(self, value):
+        self.__optimizer = value
 
     def train(self, valid_size=0.2, cv_splits=1, nreps=1, bootstraps=None,
-              patience=None, min_delta=0, learning_rate=0.001, batch_size=16, dropout_prop=0, 
-              epochs=100, jobs=1, overwrite_results=True):
+              patience=None, min_delta=0, learning_rate=0.001, batch_size=16, 
+              dropout_prop=0, hidden_size=16, hidden_layers=1, optimizer="Adam",
+              epochs=100, jobs=1, overwrite_results=True, **hyperparams):
         """
         Trains the classification neural network.
 
@@ -170,6 +160,13 @@ class PopClassifier(object):
             Batch size for the neural network. The default is 16.
         dropout_prop : float, optional
             Dropout proportion for the neural network. The default is 0.
+        hidden_size : int, optional
+            Number of neurons in the hidden layer. The default is 16.
+        hidden_layers : int, optional
+            Number of hidden layers. The default is 1.
+        optimizer : str, optional
+            Optimizer to use for training. Can be "Adam", "SGD", or "LGBFS". 
+            The default is "Adam".
         epochs : int, optional
             Number of epochs to train the neural network. The default is 100.
         jobs : int, optional
@@ -178,6 +175,12 @@ class PopClassifier(object):
         overwrite_results : boolean, optional
             If True, then will clear the output folder before training the new 
             model. The default is True.
+        **hyperparams : optional
+            Additional hyperparameters for the optimizer. For Adam, can include
+            beta1, beta2, weight_decay, and epsilon. For SGD, can include 
+            momentum, dampening, weight_decay, and nesterov. For LBFGS, can include
+            max_iter, max_eval, tolerance_grad, tolerance_change, history_size, and
+            line_search_fn. See the pytorch documentation for more details.
         
         Returns
         -------
@@ -198,6 +201,9 @@ class PopClassifier(object):
             nrep_begin = max(existing_reps)
             nreps = nrep_begin + nreps 
 
+        # Create optimizer
+        self.__store_optimizer_params(optimizer, learning_rate, **hyperparams)
+
         multi_output = (bootstraps is not None) or (nreps is not None)
 
         if multi_output:
@@ -214,18 +220,25 @@ class PopClassifier(object):
                     for j in range(nrep_begin, nreps):
                         #TODO: how does this affect mp results
                         if not self.__mp_run:
-                            boot_folder = os.path.join(self.output_folder, f"rep{j+1}_boot{i+1}")
+                            boot_folder = os.path.join(self.output_folder, 
+                                                       f"rep{j+1}_boot{i+1}")
                             if not os.path.exists(boot_folder):
                                 os.makedirs(boot_folder)
                         else:
                             boot_folder = self.output_folder
 
-                        inputs = _generate_train_inputs(self.data, valid_size, cv_splits,
-                                        nreps, seed=self.random_state, bootstrap=True)
-                        boot_loss_df = self.__train_on_inputs(inputs, cv_splits, epochs, learning_rate,
-                                            int(batch_size), dropout_prop, result_folder = boot_folder, 
-                                            patience=patience, min_delta=min_delta,
-                                            overwrite_results=overwrite_results)
+                        inputs = _generate_train_inputs(
+                            self.data, valid_size, cv_splits, nreps, 
+                            seed=self.random_state, bootstrap=True)
+                        
+                        hyperparams = {k: v for k, v in hyperparams.items() if v is not None}
+                        boot_loss_df = self.__train_on_inputs(
+                            inputs=inputs, cv_splits=cv_splits, epochs=epochs, 
+                            learning_rate=learning_rate, batch_size=int(batch_size), 
+                            dropout_prop=dropout_prop, hidden_size=hidden_size, 
+                            hidden_layers=hidden_layers, 
+                            result_folder=boot_folder, patience=patience, 
+                            min_delta=min_delta, overwrite_results=overwrite_results)
                         
                         boot_loss_df.to_csv(os.path.join(boot_folder, "loss.csv"), index=False)
                         boot_loss_df["rep"] = j + 1
@@ -245,11 +258,15 @@ class PopClassifier(object):
 
                 # Instead of looping through bootstrap iteration, run in parallel
                 # to speed up training
-                call(["python", folderpath + "/_mp_training.py", "-p", tempfolder,
-                    "-n", str(bootstraps), "--r_start", str(nrep_begin), "-r", str(nreps), 
-                    "-e", str(int(epochs)), "-v", str(valid_size), "-s", str(cv_splits), 
-                    "-l", str(learning_rate), "-b", str(int(batch_size)), "-d", str(dropout_prop),
-                    "-j", str(jobs)])
+                call(["python", folderpath + "/_mp_training.py", "--path", tempfolder,
+                    "--validsize", str(valid_size), "--cvsplits", str(cv_splits),
+                    "--repstart", str(nrep_begin), "--nreps", str(nreps),
+                    "--nboots", str(bootstraps), "--patience", str(patience),
+                    "--mindelta", str(min_delta), "--learningrate", str(learning_rate),
+                    "--batchsize", str(int(batch_size)), "--dropout", str(dropout_prop),
+                    "--hiddensize", str(hidden_size), "--hiddenlayers", str(hidden_layers),
+                    "--epochs", str(epochs), "--jobs", str(jobs)])
+                
                 loss_df = pd.read_csv(os.path.join(tempfolder, "train_history.csv"))
 
         # Save training history
@@ -778,9 +795,9 @@ class PopClassifier(object):
 
     # Hidden functions below   
     def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
-                          dropout_prop, result_folder, patience, min_delta,
-                          overwrite_results):
-
+                          dropout_prop, hidden_size, hidden_layers, 
+                          result_folder, patience, min_delta, overwrite_results):
+        
         self.__prepare_result_folder(result_folder, overwrite_results)
 
         loss_dict = {"split": [], "epoch": [], "train_loss": [], "valid_loss": [],
@@ -796,11 +813,11 @@ class PopClassifier(object):
             train_loader, valid_loader = _generate_data_loaders(X_train, y_train,
                                                                 X_valid, y_valid)
 
-            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=16, #TODO: make hidden size a parameter
-                                output_size=len(y_train.unique()),
+            net = ClassifierNet(input_size=X_train.shape[1], hidden_size=hidden_size,
+                                hidden_layers=hidden_layers, output_size=len(y_train.unique()),
                                 batch_size=batch_size, dropout_prop=dropout_prop)
-            # TODO: try adding SGD and LBFGS optimizers
-            optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+            
+            opt = self.__parameterize_optimizer(net)
             loss_func = nn.CrossEntropyLoss()
             patience_counter = 0
 
@@ -810,11 +827,11 @@ class PopClassifier(object):
                 valid_loss = 0
 
                 for _, (data, target) in enumerate(train_loader):
-                    optimizer.zero_grad()
+                    opt.zero_grad()
                     output = net(data)
                     loss = loss_func(output.squeeze(), target.squeeze().long())
                     loss.backward()
-                    optimizer.step()
+                    opt.step()
                     train_loss += loss.data.item()
             
                 # Calculate average train loss
@@ -855,6 +872,71 @@ class PopClassifier(object):
 
         return pd.DataFrame(loss_dict)
     
+    def __store_optimizer_params(self, optimizer, learning_rate, hyperparams):
+            
+        if optimizer == "Adam":
+            self.optimizer = {"type": ["Adam"], "lr": [learning_rate], 
+                              "betas": [(hyperparams.get("beta1", 0.9), 
+                                         hyperparams.get("beta2", 0.999))],
+                              "weight_decay": [hyperparams.get("weight_decay", 0)],
+                              "eps": [hyperparams.get("epsilon", 1e-8)]}
+            
+        elif optimizer == "SGD":
+            self.optimizer = {"type": ["SGD"], "lr": [learning_rate],
+                              "momentum": [hyperparams.get("momentum", 0)],
+                              "weight_decay": [hyperparams.get("weight_decay", 0)],
+                              "nesterov": [hyperparams.get("nesterov", False)],
+                              "dampening": [hyperparams.get("dampening", 0)]}
+            
+        elif optimizer == "LBFGS":
+            self.optimizer = {"type": ["LBFGS"], "lr": [learning_rate],
+                              "max_iter": [hyperparams.get("max_iter", 20)],
+                              "max_eval": [hyperparams.get("max_eval", 25)],
+                              "tolerance_grad": [hyperparams.get("tolerance_grad", 1e-5)],
+                              "tolerance_change": [hyperparams.get("tolerance_change", 1e-9)],
+                              "history_size": [hyperparams.get("history_size", 100)],
+                              "line_search_fn": [hyperparams.get("line_search_fn", None)]}
+            
+        else:
+            raise ValueError("optimizer must be 'Adam', 'SGD', or 'LBFGS'")
+    
+    
+    def __parameterize_optimizer(self, net):
+            
+        if self.optimizer["type"] == "Adam":
+            opt = torch.optim.Adam(
+                net.parameters(), 
+                lr=self.optimizer["lr"],
+                betas=self.optimizer["betas"],
+                weight_decay=self.optimizer["weight_decay"], 
+                eps=self.optimizer["eps"])
+            
+        elif self.optimizer["type"] == "SGD":
+            opt = torch.optim.SGD(
+                net.parameters(), 
+                lr=self.optimizer["lr"],
+                momentum=self.optimizer["momentum"],
+                weight_decay=self.optimizer["weight_decay"],
+                nesterov=self.optimizer["nesterov"],
+                dampening=self.optimizer["dampening"])
+            
+        elif self.optimizer["type"] == "LBFGS":
+            opt = torch.optim.LBFGS(
+                net.parameters(), 
+                lr=self.optimizer["lr"],
+                max_iter=self.optimizer["max_iter"],
+                max_eval=self.optimizer["max_eval"],
+                tolerance_grad=self.optimizer["tolerance_grad"],
+                tolerance_change=self.optimizer["tolerance_change"],
+                history_size=self.optimizer["history_size"],
+                line_search_fn=self.optimizer["line_search_fn"])
+            
+        else:
+            raise ValueError("optimizer must be 'Adam', 'SGD', or 'LBFGS'")
+        
+        return opt
+    
+
     def __calculate_performance_metrics(self, output, target):
 
         y_pred = output.argmax(axis=1)

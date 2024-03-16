@@ -4,20 +4,31 @@ import torch
 
 class ClassifierNet(nn.Module):
     
-    def __init__(self, input_size, hidden_size, output_size,
-                 batch_size, dropout_prop):
+    def __init__(self, input_size, hidden_size, hidden_layers, 
+                 output_size, batch_size, dropout_prop):
         super(ClassifierNet, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.batch1 = nn.BatchNorm1d(hidden_size)
+
+        self.hidden_layers = [nn.Linear(hidden_size, hidden_size) for i in range(hidden_layers)]
+        self.hidden_layers = nn.ModuleList(self.hidden_layers)
+        self.batch_layers = [nn.BatchNorm1d(hidden_size) for i in range(hidden_layers)]
+        self.batch_layers = nn.ModuleList(self.batch_layers)
+
         self.fc2 = nn.Linear(hidden_size, batch_size)
         self.batch2 = nn.BatchNorm1d(batch_size)
         self.fc3 = nn.Linear(batch_size, output_size)
         self.dropout = nn.Dropout(dropout_prop)
 
     def forward(self, x):
+
         x = self.batch1(self.dropout(F.relu(self.fc1(x))))
+
+        for i in range(self.hidden_layers):
+            x = self.batch_layers[i](self.dropout(F.relu(self.hidden_layers[i](x))))
+
         x = self.batch2(self.dropout(F.relu(self.fc2(x))))
         x = F.softmax(self.fc3(x), dim=1)
 
