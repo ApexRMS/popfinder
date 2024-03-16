@@ -201,8 +201,10 @@ class PopClassifier(object):
             nrep_begin = max(existing_reps)
             nreps = nrep_begin + nreps 
 
+        hyperparams = {k: v for k, v in hyperparams.items() if v is not None}
+
         # Create optimizer
-        self.__store_optimizer_params(optimizer, learning_rate, **hyperparams)
+        self.__store_optimizer_params(optimizer, learning_rate, hyperparams)
 
         multi_output = (bootstraps is not None) or (nreps is not None)
 
@@ -231,7 +233,6 @@ class PopClassifier(object):
                             self.data, valid_size, cv_splits, nreps, 
                             seed=self.random_state, bootstrap=True)
                         
-                        hyperparams = {k: v for k, v in hyperparams.items() if v is not None}
                         boot_loss_df = self.__train_on_inputs(
                             inputs=inputs, cv_splits=cv_splits, epochs=epochs, 
                             learning_rate=learning_rate, batch_size=int(batch_size), 
@@ -875,27 +876,27 @@ class PopClassifier(object):
     def __store_optimizer_params(self, optimizer, learning_rate, hyperparams):
             
         if optimizer == "Adam":
-            self.optimizer = {"type": ["Adam"], "lr": [learning_rate], 
-                              "betas": [(hyperparams.get("beta1", 0.9), 
-                                         hyperparams.get("beta2", 0.999))],
-                              "weight_decay": [hyperparams.get("weight_decay", 0)],
-                              "eps": [hyperparams.get("epsilon", 1e-8)]}
+            self.optimizer = {"type": "Adam", "lr": learning_rate, 
+                              "betas": (hyperparams.get("beta1", 0.9), 
+                                         hyperparams.get("beta2", 0.999)),
+                              "weight_decay": hyperparams.get("weight_decay", 0),
+                              "eps": hyperparams.get("epsilon", 1e-8)}
             
         elif optimizer == "SGD":
-            self.optimizer = {"type": ["SGD"], "lr": [learning_rate],
-                              "momentum": [hyperparams.get("momentum", 0)],
-                              "weight_decay": [hyperparams.get("weight_decay", 0)],
-                              "nesterov": [hyperparams.get("nesterov", False)],
-                              "dampening": [hyperparams.get("dampening", 0)]}
+            self.optimizer = {"type": "SGD", "lr": learning_rate,
+                              "momentum": hyperparams.get("momentum", 0),
+                              "weight_decay": hyperparams.get("weight_decay", 0),
+                              "nesterov": hyperparams.get("nesterov", False),
+                              "dampening": hyperparams.get("dampening", 0)}
             
         elif optimizer == "LBFGS":
-            self.optimizer = {"type": ["LBFGS"], "lr": [learning_rate],
-                              "max_iter": [hyperparams.get("max_iter", 20)],
-                              "max_eval": [hyperparams.get("max_eval", 25)],
-                              "tolerance_grad": [hyperparams.get("tolerance_grad", 1e-5)],
-                              "tolerance_change": [hyperparams.get("tolerance_change", 1e-9)],
-                              "history_size": [hyperparams.get("history_size", 100)],
-                              "line_search_fn": [hyperparams.get("line_search_fn", None)]}
+            self.optimizer = {"type": "LBFGS", "lr": learning_rate,
+                              "max_iter": hyperparams.get("max_iter", 20),
+                              "max_eval": hyperparams.get("max_eval", 25),
+                              "tolerance_grad": hyperparams.get("tolerance_grad", 1e-5),
+                              "tolerance_change": hyperparams.get("tolerance_change", 1e-9),
+                              "history_size": hyperparams.get("history_size", 100),
+                              "line_search_fn": hyperparams.get("line_search_fn", None)}
             
         else:
             raise ValueError("optimizer must be 'Adam', 'SGD', or 'LBFGS'")

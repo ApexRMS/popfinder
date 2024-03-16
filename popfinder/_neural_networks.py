@@ -13,9 +13,9 @@ class ClassifierNet(nn.Module):
         self.batch1 = nn.BatchNorm1d(hidden_size)
 
         self.hidden_layers = [nn.Linear(hidden_size, hidden_size) for i in range(hidden_layers)]
-        self.hidden_layers = nn.ModuleList(self.hidden_layers)
+        # self.hidden_layers = nn.ModuleList(self.hidden_layers)
         self.batch_layers = [nn.BatchNorm1d(hidden_size) for i in range(hidden_layers)]
-        self.batch_layers = nn.ModuleList(self.batch_layers)
+        # self.batch_layers = nn.ModuleList(self.batch_layers)
 
         self.fc2 = nn.Linear(hidden_size, batch_size)
         self.batch2 = nn.BatchNorm1d(batch_size)
@@ -26,7 +26,7 @@ class ClassifierNet(nn.Module):
 
         x = self.batch1(self.dropout(F.relu(self.fc1(x))))
 
-        for i in range(self.hidden_layers):
+        for i in range(len(self.hidden_layers)):
             x = self.batch_layers[i](self.dropout(F.relu(self.hidden_layers[i](x))))
 
         x = self.batch2(self.dropout(F.relu(self.fc2(x))))

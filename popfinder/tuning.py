@@ -6,8 +6,9 @@ from popfinder.classifier import PopClassifier
 
 def hyperparam_search(classifier, trials=None, valid_size=0.2, 
                       cv_splits=1, nreps=1, bootstraps=1, patience=10, 
-                      min_delta=0.001, learning_rate=[0.01], dropout_prop=[0.025], 
-                      batch_size=[16], epochs=[100], jobs=1, hyperparam_dict={}):
+                      min_delta=0.001, learning_rate=[0.01], batch_size=[16],
+                      dropout_prop=[0.025], hidden_size=[16], hidden_layers=[1],
+                      epochs=[100], jobs=1, hyperparam_dict={}):
     """
     Perform grid search or random search hyperparameter optimization for a 
     PopClassifier object.
@@ -34,10 +35,14 @@ def hyperparam_search(classifier, trials=None, valid_size=0.2,
         Minimum change in loss to be considered an improvement. The default is 0.001.
     learning_rate : list, optional
         List of learning rates to test. The default is [0.01].
-    dropout_prop : list, optional
-        List of dropout proportions to test. The default is [0.025].
     batch_size : list, optional
         List of batch sizes to test. The default is [16].
+    dropout_prop : list, optional
+        List of dropout proportions to test. The default is [0.025].
+    hidden_size : list, optional
+        List of hidden layer sizes to test. The default is [16].
+    hidden_layers : list, optional
+        List of numbers of hidden layers to test. The default is [1].
     epochs : list, optional
         List of numbers of epochs to test. The default is [100].
     jobs : int, optional
@@ -57,9 +62,11 @@ def hyperparam_search(classifier, trials=None, valid_size=0.2,
     """
 
     #TODO: test
-    additional_params = dict({"lr": learning_rate,
-                              "drop_prop": dropout_prop,
+    additional_params = dict({"learning_rate": learning_rate,
                               "batch_size": batch_size,
+                              "dropout_prop": dropout_prop,
+                              "hidden_size": hidden_size,
+                              "hidden_layers": hidden_layers,
                               "epochs": epochs})
     hyperparam_dict = {**additional_params, **hyperparam_dict}
 
@@ -78,44 +85,41 @@ def hyperparam_search(classifier, trials=None, valid_size=0.2,
     # Create list to store results
     results = []
 
+    # Counter for storing hyperparameter collection
+    hp_counter = 0
+
     # Iterate through hyperparameter combinations
     for hp in hyperparams:
 
         print(f"Testing hyperparameters: {hp}")
         # Create a new classifier object
         new_classifier = PopClassifier.load(os.path.join(output_folder, output_file))
-        fname = "lr" + str(hp[0]) + "_drop" + str(hp[1]) + "_batch" + str(hp[2]) + "_epochs" + str(hp[3])
+        fname = "hyperparam_combo_" + str(hp_counter)
         new_classifier.output_folder = os.path.join(output_folder, fname)
 
         # Set hyperparameters
-        lr = hp[0]
-        d = hp[1]
-        bs = hp[2]
-        e = hp[3]
+        hp_combo = {}
+        for i, key in enumerate(hyperparam_dict):
+            hp_combo[key] = hp[i]
 
         new_classifier.train(jobs=jobs, nreps=nreps, bootstraps=bootstraps, 
-                             cv_splits=cv_splits, valid_size=valid_size,
-                             learning_rate=lr, dropout_prop=d, 
-                             batch_size=bs, epochs=e, patience=patience,
-                             min_delta=min_delta)
+                            cv_splits=cv_splits, valid_size=valid_size,
+                            patience=patience, min_delta=min_delta, **hp_combo)
         
         # Average results across splits, reps, and bootstraps
         averaged_history = new_classifier.train_history.groupby(['epoch']).mean()
 
         # Store results
-        train_loss = min(averaged_history["train_loss"])
-        valid_loss = min(averaged_history["valid_loss"])
-        valid_acc = max(averaged_history["valid_accuracy"])
-        valid_prec = max(averaged_history["valid_precision"])
-        valid_recall = max(averaged_history["valid_recall"])
-        valid_f1 = max(averaged_history["valid_f1"])
-        valid_mcc = max(averaged_history["valid_mcc"])
+        hp_combo["train_loss"] = min(averaged_history["train_loss"])
+        hp_combo["valid_loss"] = min(averaged_history["valid_loss"])
+        hp_combo["valid_acc"] = max(averaged_history["valid_accuracy"])
+        hp_combo["valid_prec"] = max(averaged_history["valid_precision"])
+        hp_combo["valid_recall"] = max(averaged_history["valid_recall"])
+        hp_combo["valid_f1"] = max(averaged_history["valid_f1"])
+        hp_combo["valid_mcc"] = max(averaged_history["valid_mcc"])
         
-        results.append({"lr": lr, "drop_prop": d, "batch_size": int(bs), 
-                        "epochs": int(e), "train_loss": train_loss,
-                        "valid_loss": valid_loss, "valid_acc": valid_acc,
-                        "valid_prec": valid_prec, "valid_recall": valid_recall,
-                        "valid_f1": valid_f1, "valid_mcc": valid_mcc})
+        results.append(hp_combo)
+        hp_counter += 1
     
     # Create dataframe from results
     results_df = pd.DataFrame(results)
