@@ -36,7 +36,7 @@ class PopClassifier(object):
         self.__data = data # GeneticData object
         self.__random_state = random_state
         if output_folder is None:
-            output_folder = os.join.path(os.getdcwd(), "popfinder_results")
+            output_folder = os.path.join(os.getcwd(), "popfinder_results")
         self.__output_folder = output_folder
         self.__label_enc = data.label_enc
         self.__train_history = None
