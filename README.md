@@ -247,8 +247,8 @@ best_hyperparams = results.loc[results['valid_mcc'].idxmax()]
 Finally, you are ready to train your model!
 ```python
 classifier.train(epochs=best_hyperparams['epochs'], 
-                 learning_rate=best_hyperparams['lr'], 
-                 dropout_prop=best_hyperparams['drop_prop'], 
+                 learning_rate=best_hyperparams['learning_rate'], 
+                 dropout_prop=best_hyperparams['dropout_prop'], 
                  batch_size=best_hyperparams['batch_size'])
 
 ```
