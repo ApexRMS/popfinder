@@ -61,8 +61,7 @@ if __name__ == "__main__":
     parser.add_argument("--nboots", help="Number of bootstraps", type=int)
     parser.add_argument(
         "--patience", 
-        help="Number of epochs to wait for improvement before stopping training", 
-        type=int)
+        help="Number of epochs to wait for improvement before stopping training")
     parser.add_argument(
         "--mindelta", 
         help="Minimum change in loss to be considered an improvement", 

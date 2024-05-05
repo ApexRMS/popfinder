@@ -133,7 +133,7 @@ class PopClassifier(object):
     def train(self, valid_size=0.2, cv_splits=1, nreps=1, bootstraps=None,
               patience=None, min_delta=0, learning_rate=0.001, batch_size=16, 
               dropout_prop=0, hidden_size=16, hidden_layers=1, optimizer="Adam",
-              epochs=100, jobs=1, overwrite_results=True, **hyperparams):
+              epochs=100, jobs=1, overwrite_results=False, **hyperparams):
         """
         Trains the classification neural network.
 
@@ -950,13 +950,18 @@ class PopClassifier(object):
 
         return acc, prec, rec, f1, mcc
     
-    def __prepare_result_folder(self, result_folder, overwrite_results=True):
+    def __prepare_result_folder(self, result_folder, overwrite_results):
 
         # Make result folder if it doesn't exist
         if not os.path.exists(result_folder):
             os.mkdir(result_folder)
         elif overwrite_results:
-            shutil.rmtree(result_folder)
+            # Only remove rep/boot folders and best_model.pt
+            folders = filter(os.path.isdir, os.listdir(result_folder))
+            for f in folders:
+                if ("rep" and "boot") in f:
+                    shutil.rmtree(os.path.join(result_folder, f))
+            os.remove(os.path.join(result_folder, "best_model.pt"))
             os.mkdir(result_folder)
 
     def __test_on_multiple_models(self, reps, bootstraps, splits, X_test, y_true_pops):
