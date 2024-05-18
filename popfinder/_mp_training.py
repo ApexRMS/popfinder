@@ -94,8 +94,8 @@ if __name__ == "__main__":
     # Generate inputs
     classifier_objects = create_classifier_objects(rep_start, nreps, nboots, popfinder_path)
     # Create dictionary of train args
-    train_args = {"valid_size": valid_size, "cv_splits": cv_splits, "nreps": nreps, 
-                  "bootstraps": nboots, "patience": patience, "min_delta": min_delta,
+    train_args = {"valid_size": valid_size, "cv_splits": cv_splits, "nreps": 1, 
+                  "bootstraps": 1, "patience": patience, "min_delta": min_delta,
                   "learning_rate": learning_rate, "batch_size": batch_size,
                   "dropout_prop": dropout_prop, "hidden_size": hidden_size,
                   "hidden_layers": hidden_layers, "epochs": epochs}
