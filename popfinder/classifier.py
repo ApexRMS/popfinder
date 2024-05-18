@@ -830,6 +830,9 @@ class PopClassifier(object):
 
             for epoch in range(int(epochs)):
 
+                if (patience is not None) and (patience_counter > int(patience)):
+                    break
+
                 train_loss = 0
                 valid_loss = 0
 
@@ -854,6 +857,7 @@ class PopClassifier(object):
                     if valid_loss < lowest_val_loss_rep:
                         lowest_val_loss_rep = valid_loss
                         torch.save(net, os.path.join(result_folder, f"best_model_split{split}.pt"))
+                        patience_counter = 0 # reset patience
 
                     elif ((valid_loss - lowest_val_loss_rep) > min_delta) & (patience is not None): 
                         patience_counter += 1
@@ -876,6 +880,7 @@ class PopClassifier(object):
                 loss_dict["valid_recall"].append(rec)
                 loss_dict["valid_f1"].append(f1)
                 loss_dict["valid_mcc"].append(mcc)
+
 
         return pd.DataFrame(loss_dict)
     
