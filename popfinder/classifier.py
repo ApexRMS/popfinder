@@ -247,7 +247,7 @@ class PopClassifier(object):
                         loss_df = pd.concat([loss_df, boot_loss_df], axis=0, ignore_index=True)
             elif jobs > 1:
                 # Create tempfolder
-                tempfolder = tempfile.mkdtemp()
+                tempfolder = os.path.join(self.output_folder, "temp")
 
                 # Let popfinder know this is a multiprocessing run (affects output folder creation)
                 self.__mp_run = True
@@ -401,16 +401,18 @@ class PopClassifier(object):
             array_width_total = len(bootstraps) * splits.max() * reps.max()
             assign_array = np.zeros(shape=(len(X_unknown), array_width_total))
             array_start_position = 0
+            counter = 1
 
             for rep in reps:
                 for boot in bootstraps:
                     bootstrap_folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
                     # array_width_bootstrap = splits.max() * reps.max()
-                    array_width_bootstrap = splits.max() * rep * boot
-                    array_end_position = boot * array_width_bootstrap
+                    # array_width_bootstrap = splits.max() * counter
+                    array_end_position = splits.max() * counter
                     new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
                     assign_array[:, array_start_position:array_end_position] = new_array
                     array_start_position = array_end_position
+                    counter += 1
 
 
             unknown_data = self.__get_most_common_preds(unknown_data, assign_array)
@@ -794,6 +796,10 @@ class PopClassifier(object):
         if dropout_prop > 1 or dropout_prop < 0:
             raise ValueError("dropout_prop must be between 0 and 1")
 
+        # Validate that the number of CV splits is not less than the smallest pop size
+        if cv_splits > min(self.data.train["pop"].value_counts()):
+            raise ValueError("cv_splits cannot be greater than the smallest population size")
+
     # Hidden functions below   
     def __train_on_inputs(self, inputs, cv_splits, epochs, learning_rate, batch_size, 
                           dropout_prop, hidden_size, hidden_layers, 
@@ -851,7 +857,7 @@ class PopClassifier(object):
 
                     elif ((valid_loss - lowest_val_loss_rep) > min_delta) & (patience is not None): 
                         patience_counter += 1
-                        if patience_counter > patience:
+                        if patience_counter > int(patience):
                             break
 
                     if valid_loss < self.__lowest_val_loss_total:

@@ -48,23 +48,32 @@ class GeneticData():
     split_unknowns(data)
         Splits data into known and unknown samples.
     """
-    def __init__(self, genetic_data=None, sample_data=None, test_size=0.2, seed=123):
+    def __init__(self, genetic_data=None, sample_data=None, test_size=0.2, 
+                 test_samples=None, exclude_pops=None, seed=123):
 
-        self._validate_init_inputs(genetic_data, sample_data, test_size, seed)
+        self._validate_init_inputs(genetic_data, sample_data, test_size, 
+                                   test_samples, seed)
 
         self.genetic_data = genetic_data
         self.sample_data = sample_data
         self.seed = seed
 
         if genetic_data is not None and sample_data is not None:
-            self._initialize(test_size=test_size, seed=seed)
+            self._initialize(test_size=test_size, test_samples=test_samples, 
+                             exclude_pops=exclude_pops, seed=seed)
 
-    def read_data(self):
+    def read_data(self, exclude_pops):
         """
         Reads a .vcf file containing genetic data and
         compiles information into a pandas DataFrame for either a 
         classifier or regressor neural network.
 
+        Parameters
+        ----------
+        exclude_pops : list
+            List of populations that are in the genetic_data and sample_data 
+            files but you want to exclude from the analysis.
+        
         Returns
         -------
         data : Pandas DataFrame
@@ -83,6 +92,7 @@ class GeneticData():
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs = self._sort_samples(locs, samples)
         locs["alleles"] = list(dc)
+        locs = locs[~locs["pop"].isin(exclude_pops)]
 
         return locs
 
@@ -112,7 +122,7 @@ class GeneticData():
         return known, unknown
 
     def split_train_test(self, data=None, stratify_by_pop=True, test_size=0.2, 
-                         seed=123, bootstrap=False):
+                         test_samples=None, seed=123, bootstrap=False):
         """
         Splits data into training and testing sets.
         
@@ -140,8 +150,15 @@ class GeneticData():
             genetic information for testing samples.
         """
         # Split data into training and testing
-        if stratify_by_pop is True:
+        # TODO: test the test_samples method
+        if test_samples is not None:
+            test_samples = pd.read_tsv(test_samples).tolist()
+            test = data[data["sampleID"].isin(test_samples)]
+            train = data[~data["sampleID"].isin(test_samples)]
+
+        elif stratify_by_pop is True:
             train, test = self._stratified_split(data, test_size=test_size, seed=seed)
+            
         else:
             train, test = self._random_split(data, test_size=test_size, seed=seed)
 
@@ -247,11 +264,12 @@ class GeneticData():
         _, self.unknowns = self.split_unknowns(locs)
         self.data = pd.concat([self.knowns, self.unknowns], ignore_index=True)
 
-    def _initialize(self, test_size=0.2, seed=123):
+    def _initialize(self, test_size=0.2, test_samples=None, exclude_pops=None, seed=123):
 
-        self.data = self.read_data()
+        self.data = self.read_data(exclude_pops)
         self.knowns, self.unknowns = self.split_unknowns(self.data)
-        self.train, self.test = self.split_train_test(test_size=test_size, seed=seed)
+        self.train, self.test = self.split_train_test(
+            test_size=test_size, test_samples=test_samples, seed=seed)
 
         # Create label encoder from train target
         self.label_enc = LabelEncoder()
@@ -330,7 +348,8 @@ class GeneticData():
 
         return train, test
 
-    def _validate_init_inputs(self, genetic_data, sample_data, test_size, seed):
+    def _validate_init_inputs(self, genetic_data, sample_data, test_size, 
+                              test_samples, seed):
 
         if genetic_data is not None and not isinstance(genetic_data, str):
             raise ValueError("genetic_data must be a string")
@@ -343,6 +362,9 @@ class GeneticData():
 
         if test_size > 1 or test_size < 0:
             raise ValueError("test_size must be between 0 and 1")
+        
+        if test_samples is not None and not isinstance(test_samples, str):
+            raise ValueError("test_samples must be a string")
 
         if not isinstance(seed, int):
             raise ValueError("seed must be an integer")

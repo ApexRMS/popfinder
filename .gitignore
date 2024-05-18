@@ -140,4 +140,6 @@ tbmu_data/
 tbmu_workflow_results/
 tbmu-workflow.py
 tbmu_results/
+LS_sim_test/
+tbmu_testing/
 sim_data.py
