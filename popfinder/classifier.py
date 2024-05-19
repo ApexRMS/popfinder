@@ -1069,6 +1069,6 @@ class PopClassifier(object):
     def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
         for rep in range(nrep_begin, nreps):
             for boot in range(bootstraps):
-                folder = os.path.join(self.output_folder, f"rep{rep+1}_boot{boot+1}")
-                os.remove(os.path.join(folder, "best_model.pt"))
-
+                mod_path = os.path.join(self.output_folder, f"rep{rep+1}_boot{boot+1}", "best_model.pt")
+                if os.path.exists(mod_path):
+                    os.remove(mod_path)
