@@ -92,7 +92,9 @@ class GeneticData():
         locs = pd.read_csv(self.sample_data, sep="\t")
         locs = self._sort_samples(locs, samples)
         locs["alleles"] = list(dc)
-        locs = locs[~locs["pop"].isin(exclude_pops)]
+        
+        if exclude_pops is not None:
+            locs = locs[~locs["pop"].isin(exclude_pops)]
 
         return locs
 
