@@ -278,11 +278,19 @@ class PopClassifier(object):
        
        # Determine best model
         if (jobs == 1) or (not multi_output):
-            self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+            best_model_path = os.path.join(self.output_folder, "best_model.pt")
+            
+            if os.path.exists(best_model_path):
+                self.__best_model = torch.load(os.path.join(self.output_folder, "best_model.pt"))
+            
         else:
             best_model_folder, min_split = self.__find_best_model_folder_from_mp()
-            self.__best_model = torch.load(os.path.join(best_model_folder, f"best_model_split{min_split}.pt"))
-            torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
+            best_model_path = os.path.join(best_model_folder, f"best_model_split{min_split}.pt")
+
+            if os.path.exists(best_model_path):
+                self.__best_model = torch.load(os.path.join(best_model_folder, f"best_model_split{min_split}.pt"))
+                torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
+
             self.__clean_mp_folders(nrep_begin, nreps, bootstraps)
 
 
