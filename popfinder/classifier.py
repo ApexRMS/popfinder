@@ -285,11 +285,13 @@ class PopClassifier(object):
             
         else:
             best_model_folder, min_split = self.__find_best_model_folder_from_mp()
-            best_model_path = os.path.join(best_model_folder, f"best_model_split{min_split}.pt")
 
-            if os.path.exists(best_model_path):
-                self.__best_model = torch.load(os.path.join(best_model_folder, f"best_model_split{min_split}.pt"))
-                torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
+            if best_model_folder is not None:
+                best_model_path = os.path.join(best_model_folder, f"best_model_split{min_split}.pt")
+
+                if os.path.exists(best_model_path):
+                    self.__best_model = torch.load(os.path.join(best_model_folder, f"best_model_split{min_split}.pt"))
+                    torch.save(self.__best_model, os.path.join(self.output_folder, "best_model.pt"))
 
             self.__clean_mp_folders(nrep_begin, nreps, bootstraps)
 
@@ -1059,11 +1061,18 @@ class PopClassifier(object):
         return unknown_data
 
     def __find_best_model_folder_from_mp(self):
-        min_loss = self.train_history.iloc[self.train_history[["valid_loss"]].idxmin()]
-        min_rep = min_loss["rep"].values[0]
-        min_boot = min_loss["bootstrap"].values[0]
-        min_split = min_loss["split"].values[0]
-        best_model_folder = os.path.join(self.output_folder, f"rep{min_rep}_boot{min_boot}")
+
+        if self.train_history is not None:
+            min_loss = self.train_history.iloc[self.train_history[["valid_loss"]].idxmin()]
+            min_rep = min_loss["rep"].values[0]
+            min_boot = min_loss["bootstrap"].values[0]
+            min_split = min_loss["split"].values[0]
+            best_model_folder = os.path.join(self.output_folder, f"rep{min_rep}_boot{min_boot}")
+
+        else:
+            best_model_folder = None
+            min_split = None
+        
         return best_model_folder, min_split
     
     def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
