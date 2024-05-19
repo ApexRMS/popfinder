@@ -1063,6 +1063,11 @@ class PopClassifier(object):
     def __find_best_model_folder_from_mp(self):
 
         if self.train_history is not None:
+            loss_reported = not self.train_history.train_loss.isnull().all()
+        else:
+            loss_reported = False
+            
+        if loss_reported:
             min_loss = self.train_history.iloc[self.train_history[["valid_loss"]].idxmin()]
             min_rep = min_loss["rep"].values[0]
             min_boot = min_loss["bootstrap"].values[0]
