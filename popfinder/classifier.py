@@ -47,6 +47,7 @@ class PopClassifier(object):
         self.__precision = None
         self.__recall = None
         self.__f1 = None
+        self.__mcc = None
         self.__confusion_matrix = None
         self.__nn_type = "classifier"
         self.__mp_run = False
@@ -113,6 +114,10 @@ class PopClassifier(object):
     @property
     def f1(self):
         return self.__f1
+
+    @property
+    def mcc(self):
+        return self.__mcc
     
     @property
     def confusion_matrix(self):
@@ -133,7 +138,8 @@ class PopClassifier(object):
     def train(self, valid_size=0.2, cv_splits=1, nreps=1, bootstraps=None,
               patience=None, min_delta=0, learning_rate=0.001, batch_size=16, 
               dropout_prop=0, hidden_size=16, hidden_layers=1, optimizer="Adam",
-              epochs=100, jobs=1, overwrite_results=False, **hyperparams):
+              epochs=100, jobs=1, overwrite_results=False, 
+              **hyperparams):
         """
         Trains the classification neural network.
 
@@ -296,7 +302,7 @@ class PopClassifier(object):
             self.__clean_mp_folders(nrep_begin, nreps, bootstraps)
 
 
-    def test(self, use_best_model=True, save=True):
+    def test(self, use_best_model=True, ensemble_accuracy_threshold=0.5, save=True):
         """
         Tests the classification neural network.
 
@@ -305,7 +311,11 @@ class PopClassifier(object):
         use_best_model : bool, optional
             Whether to test using the best model only. If set to False, then will use all
             models generated from all training repeats and cross-validation splits and
-            provide an ensemble frequency of assignments. The default is True.
+            provide an ensemble frequency of assignments. The default is True.   
+        ensemble_accuracy_threshold : float, optional
+            The threshold for the ensemble accuracy. If the training accuracy of a model 
+            in the ensemble is below this threshold, then the model will not be used in 
+            the test. The default is 0.5.     
         save : bool, optional
             Whether to save the test results to the output folder. The default is True.
         
@@ -341,7 +351,9 @@ class PopClassifier(object):
                 reps = 1
 
             # Tests on all reps, bootstraps, and cv splits
-            self.__test_results = self.__test_on_multiple_models(reps, bootstraps, splits, X_test, y_true_pops)
+            self.__test_results = self.__test_on_multiple_models(
+                reps, bootstraps, splits, X_test, y_true_pops,
+                ensemble_accuracy_threshold)
             y_pred = self.label_enc.transform(self.__test_results["pred_pop"])
             y_true = self.label_enc.transform(self.__test_results["true_pop"])
             y_true_pops = self.label_enc.inverse_transform(y_true)
@@ -360,7 +372,7 @@ class PopClassifier(object):
 
         self.__calculate_performance(y_true, y_pred, y_true_pops, use_best_model, bootstraps)
 
-    def assign_unknown(self, use_best_model=True, save=True):
+    def assign_unknown(self, use_best_model=True, ensemble_accuracy_threshold=0.5, save=True):
         """
         Assigns unknown samples to populations using the trained neural network.
 
@@ -372,6 +384,10 @@ class PopClassifier(object):
             models generated from all training repeats and cross-validation splits to
             identify the most commonly assigned population and the frequency of assignment
             to this population. The default is True.
+        ensemble_accuracy_threshold : float, optional
+            The threshold for the ensemble accuracy. If the training accuracy of a model 
+            in the ensemble is below this threshold, then the model will not be used in 
+            the assignment. The default is 0.5.
         save : bool, optional
             Whether to save the results to a csv file. The default is True.
         
@@ -415,11 +431,8 @@ class PopClassifier(object):
 
             for rep in reps:
                 for boot in bootstraps:
-                    bootstrap_folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
-                    # array_width_bootstrap = splits.max() * reps.max()
-                    # array_width_bootstrap = splits.max() * counter
                     array_end_position = splits.max() * counter
-                    new_array = self.__assign_on_multiple_models(X_unknown, bootstrap_folder)
+                    new_array = self.__assign_on_multiple_models(X_unknown, rep, boot, ensemble_accuracy_threshold)
                     assign_array[:, array_start_position:array_end_position] = new_array
                     array_start_position = array_end_position
                     counter += 1
@@ -451,6 +464,10 @@ class PopClassifier(object):
 
         pred_df = pd.DataFrame(assign_array)
         for col in pred_df.columns:
+
+            if pred_df[col].isnull().values.any():
+                continue
+
             pred_df[col] = self.label_enc.inverse_transform(pred_df[col].astype(int))
 
         classifications = self.classification.copy()
@@ -507,10 +524,21 @@ class PopClassifier(object):
         """
 
         summary = {
-            "metric": ["accuracy", "precision", "recall", "f1"],
-            "value": [self.accuracy, self.precision, self.recall, self.f1]
+            "metric": ["accuracy", "precision", "recall", "f1", "mcc"],
+            "value": [self.accuracy, self.precision, self.recall, self.f1, self.mcc]
         }
+
+        # Add population accuracies
+        if self.__test_results is not None:
+            pop_accuracy = self.__test_results.groupby("true_pop").apply(
+                lambda x: accuracy_score(x["true_pop"], x["pred_pop"]))
+            pop_accuracy = pop_accuracy.reset_index()
+            pop_accuracy.columns = ["metric", "value"]         
+            pop_accuracy["metric"] = pop_accuracy["metric"] + "_accuracy"
+
         summary = pd.DataFrame(summary)
+
+        summary = pd.concat([summary, pop_accuracy], axis=0)
 
         if save:
             summary.to_csv(os.path.join(self.output_folder,
@@ -985,12 +1013,19 @@ class PopClassifier(object):
             os.remove(os.path.join(result_folder, "best_model.pt"))
             os.mkdir(result_folder)
 
-    def __test_on_multiple_models(self, reps, bootstraps, splits, X_test, y_true_pops):
+    def __test_on_multiple_models(self, reps, bootstraps, splits, X_test, y_true_pops, 
+                                  ensemble_accuracy_threshold):
 
         result_df = pd.DataFrame()
         for rep in reps:
             for boot in bootstraps:
                 for split in splits:
+
+                    if ensemble_accuracy_threshold is not None:
+                        train_accuracy = self.__get_ensemble_train_accuracy(rep, split, boot)
+                        if train_accuracy < ensemble_accuracy_threshold:
+                            continue
+
                     folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
                     model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
                     y_pred = model(X_test).argmax(axis=1)
@@ -1013,9 +1048,10 @@ class PopClassifier(object):
             self.__test_on_bootstraps = True
 
         results = self.__organize_performance_metrics(self.test_results, y_true_pops, y_true, y_pred)
-        self.__confusion_matrix, self.__accuracy, self.__precision, self.__recall, self.__f1 = results
+        self.__confusion_matrix, self.__accuracy, self.__precision, self.__recall, self.__f1, self.__mcc = results
 
     def __organize_performance_metrics(self, result_df, y_true_pops, y_true, y_pred):
+
         cf = np.round(confusion_matrix(
             result_df["true_pop"], result_df["pred_pop"], 
             labels=np.unique(y_true_pops).tolist(), normalize="true"), 3)
@@ -1023,12 +1059,14 @@ class PopClassifier(object):
         precision = np.round(precision_score(y_true, y_pred, average="weighted"), 3)
         recall = np.round(recall_score(y_true, y_pred, average="weighted"), 3)
         f1 = np.round(f1_score(y_true, y_pred, average="weighted"), 3)
+        mcc = np.round(matthews_corrcoef(y_true, y_pred), 3)
 
-        return cf, accuracy, precision, recall, f1
+        return cf, accuracy, precision, recall, f1, mcc
 
-    def __assign_on_multiple_models(self, X_unknown, folder):
-        # reps = self.train_history["rep"].unique()
+    def __assign_on_multiple_models(self, X_unknown, rep, boot, ensemble_accuracy_threshold):
+
         splits = self.train_history["split"].unique()
+        folder = os.path.join(self.output_folder, f"rep{rep}_boot{boot}")
 
         # Create empty array to fill
         array_width_total = splits.max() # * reps.max()
@@ -1037,9 +1075,15 @@ class PopClassifier(object):
 
         #for rep in reps:
         for split in splits:
-            model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
-            preds = model(X_unknown).argmax(axis=1)
-            array[:, pos] = preds
+
+            train_accuracy = self.__get_ensemble_train_accuracy(rep, split, boot)
+
+            if ensemble_accuracy_threshold is not None and train_accuracy < ensemble_accuracy_threshold:
+                array[:, pos] = np.NaN 
+            else:
+                model = torch.load(os.path.join(folder, f"best_model_split{split}.pt"))
+                preds = model(X_unknown).argmax(axis=1)
+                array[:, pos] = preds
             pos += 1
 
         return array
@@ -1079,6 +1123,15 @@ class PopClassifier(object):
             min_split = None
         
         return best_model_folder, min_split
+    
+    def __get_ensemble_train_accuracy(self, rep, split, boot):
+
+        train_results = self.train_history[(self.train_history["rep"] == rep) &\
+                            (self.train_history["split"] == split) &\
+                            (self.train_history["bootstrap"] == boot)]
+        train_accuracy = train_results["valid_accuracy"].iloc[-1]
+
+        return train_accuracy
     
     def __clean_mp_folders(self, nrep_begin, nreps, bootstraps):
         for rep in range(nrep_begin, nreps):

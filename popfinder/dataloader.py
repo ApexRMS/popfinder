@@ -21,6 +21,15 @@ class GeneticData():
         Path to sample data file. Must be .tsv or .txt.
     test_size : float
         Proportion of data to be used for testing.
+    test_samples : str
+        Path to file containing sample IDs to be used for testing. If None
+        (Default), then samples are randomly assigned for testing.
+    exclude_pops : list
+        List of populations to exclude from the analysis. If None (Default),
+        then all populations are included.
+    filter_high_fst_snps : int
+        Number of SNPs to retain based on Fst values. If None (Default),
+        then all SNPs are retained.
     seed : int
         Seed for random number generator.
     
@@ -49,7 +58,7 @@ class GeneticData():
         Splits data into known and unknown samples.
     """
     def __init__(self, genetic_data=None, sample_data=None, test_size=0.2, 
-                 test_samples=None, exclude_pops=None, seed=123):
+                 test_samples=None, exclude_pops=None, filter_high_fst_snps=None, seed=123):
 
         self._validate_init_inputs(genetic_data, sample_data, test_size, 
                                    test_samples, seed)
@@ -59,8 +68,11 @@ class GeneticData():
         self.seed = seed
 
         if genetic_data is not None and sample_data is not None:
-            self._initialize(test_size=test_size, test_samples=test_samples, 
-                             exclude_pops=exclude_pops, seed=seed)
+            self._initialize(test_size=test_size, 
+                             test_samples=test_samples, 
+                             exclude_pops=exclude_pops, 
+                             filter_high_fst_snps=filter_high_fst_snps,
+                             seed=seed)
 
     def read_data(self, exclude_pops):
         """
@@ -266,16 +278,48 @@ class GeneticData():
         _, self.unknowns = self.split_unknowns(locs)
         self.data = pd.concat([self.knowns, self.unknowns], ignore_index=True)
 
-    def _initialize(self, test_size=0.2, test_samples=None, exclude_pops=None, seed=123):
+    def _initialize(self, test_size, test_samples, exclude_pops, filter_high_fst_snps, seed):
 
         self.data = self.read_data(exclude_pops)
         self.knowns, self.unknowns = self.split_unknowns(self.data)
         self.train, self.test = self.split_train_test(
             test_size=test_size, test_samples=test_samples, seed=seed)
+        
+        if filter_high_fst_snps is not None:
+            self._filter_snps(filter_high_fst_snps)
 
         # Create label encoder from train target
         self.label_enc = LabelEncoder()
         self.label_enc.fit_transform(self.train["pop"])
+
+    def _filter_snps(self, filter_high_fst_snps):
+            
+        # Load genotype array
+        print("Calculating Fst...")
+        vcf = allel.read_vcf(self.genetic_data, log=sys.stderr)
+        gen = allel.GenotypeArray(vcf["calldata/GT"])
+
+        # Create array of subpopulations
+        training_samples = self.train.reset_index()
+        training_pop_list = {
+            pop: training_samples[training_samples["pop"] == pop].index.tolist()
+            for pop in np.unique(training_samples["pop"])
+        }
+        subpops = np.array(list(training_pop_list.values()))
+
+        # Calculate Fst based on ONLY the training dataset
+        a, b, c = allel.weir_cockerham_fst(gen, subpops, max_allele=1)
+        fst = (a / (a + b + c))[:,0]
+
+        # Filter SNPs and get a list of x highest Fst SNPs
+        print("Filtering SNPs...")
+        high_fst_snps = np.argsort(fst, axis=0)[-filter_high_fst_snps:]
+        high_fst_snps = high_fst_snps.flatten()
+        high_fst_snps = np.unique(high_fst_snps)
+
+        # Only retain high Fst SNPs for all datasets
+        self.data["alleles"] = self.data["alleles"].apply(
+            lambda x: [x[i] for i in range(len(x)) if i in high_fst_snps])
 
     def _load_genotypes(self, genetic_data):
 
